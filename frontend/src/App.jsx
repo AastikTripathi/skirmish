@@ -71,6 +71,30 @@ export default function App() {
   const [showRules, setShowRules] = useState(false);   // info panel toggle
   const gridRef = useRef(null);
   const prevUnitsRef = useRef(INITIAL_UNITS);
+  const currentUnitsRef = useRef(INITIAL_UNITS);
+
+  // Position change tracking to lift units during moves
+  const [movingUnitId, setMovingUnitId] = useState(null);
+  const [lungingUnitIds, setLungingUnitIds] = useState({});
+  const [repelShieldUnitId, setRepelShieldUnitId] = useState(null);
+  const [dyingUnits, setDyingUnits] = useState([]);
+
+  useEffect(() => {
+    const prevUnits = prevUnitsRef.current;
+    if (prevUnits && prevUnits.length > 0) {
+      for (const u of units) {
+        const prev = prevUnits.find(p => p.id === u.id);
+        if (prev && (prev.x !== u.x || prev.y !== u.y)) {
+          setMovingUnitId(u.id);
+          const tid = setTimeout(() => {
+            setMovingUnitId(null);
+          }, 600);
+          break;
+        }
+      }
+    }
+    prevUnitsRef.current = units;
+  }, [units]);
 
   // Player Identity States
   const [mySide, setMySide] = useState(null);
@@ -81,11 +105,123 @@ export default function App() {
   useEffect(() => {
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
-      /* Projectile dot travelling across the grid */
+      /* 3D Grid Perspective and Alignment */
+      .grid-3d-perspective {
+        perspective: 1200px;
+        transform-style: preserve-3d;
+        padding: 40px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .grid-3d-board {
+        transform: rotateX(55deg) rotateZ(-45deg);
+        transform-style: preserve-3d;
+        box-shadow: 15px 15px 35px rgba(0, 0, 0, 0.35), -5px -5px 15px rgba(255, 255, 255, 0.4);
+        transition: transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+      }
+      .cell-3d {
+        transform-style: preserve-3d;
+      }
+
+      /* 3D Cube Styles */
+      .cube-container {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        transform-style: preserve-3d;
+        transform: translateZ(15px);
+        transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.25s ease;
+      }
+      .cube-container.lifted {
+        transform: translateZ(25px);
+      }
+      .cube-container.moving {
+        transform: translateZ(45px) rotateX(8deg) rotateY(8deg);
+      }
+      .cube-face {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: monospace;
+        font-weight: bold;
+        font-size: 13px;
+        color: #ffffff;
+        backface-visibility: hidden;
+      }
+      .cube-face-top {
+        transform: rotateX(0deg) translateZ(15px);
+        border: 1.5px solid rgba(255, 255, 255, 0.6);
+        box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.3);
+      }
+      .cube-face-front {
+        transform: rotateX(-90deg) translateZ(15px);
+        filter: brightness(82%);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .cube-face-right {
+        transform: rotateY(90deg) translateZ(15px);
+        filter: brightness(68%);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .cube-face-left {
+        transform: rotateY(-90deg) translateZ(15px);
+        filter: brightness(75%);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .cube-face-back {
+        transform: rotateX(90deg) translateZ(15px);
+        filter: brightness(90%);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .cube-shadow {
+        position: absolute;
+        width: 24px;
+        height: 24px;
+        background-color: rgba(0, 0, 0, 0.3);
+        filter: blur(4px);
+        transform: translateZ(1px);
+        transition: transform 0.25s ease, opacity 0.25s ease, background-color 0.25s ease;
+        border-radius: 4px;
+        pointer-events: none;
+      }
+      .cube-container.lifted ~ .cube-shadow {
+        transform: translateZ(1px) scale(0.8);
+        background-color: rgba(0, 0, 0, 0.4);
+        filter: blur(6px);
+      }
+      .cube-container.moving ~ .cube-shadow {
+        transform: translateZ(1px) scale(0.6);
+        background-color: rgba(0, 0, 0, 0.15);
+        filter: blur(8px);
+        opacity: 0.6;
+      }
+
+      /* Absolute overlay positioning for smooth motion transitions */
+      .absolute-unit-wrapper {
+        position: absolute;
+        width: 10%;
+        height: 10%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: left 0.6s cubic-bezier(0.25, 0.8, 0.25, 1), top 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+        transform-style: preserve-3d;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .absolute-unit-wrapper .cube-container {
+        pointer-events: auto;
+      }
+
+      /* Projectile dot travelling across the grid in 3D */
       @keyframes projectileTravel {
-        0%   { transform: translate(var(--px0), var(--py0)); opacity: 1; }
+        0%   { transform: translate3d(var(--px0), var(--py0), 16px); opacity: 1; }
         85%  { opacity: 1; }
-        100% { transform: translate(var(--px1), var(--py1)); opacity: 0; }
+        100% { transform: translate3d(var(--px1), var(--py1), 16px); opacity: 0; }
       }
       .projectile-dot {
         position: absolute;
@@ -96,6 +232,31 @@ export default function App() {
         left: 0; top: 0;
       }
 
+      /* Magical Protection Shield Glow */
+      .magical-shield {
+        box-shadow: 0 0 25px #3b82f6, 0 0 10px #3b82f6, inset 0 0 15px #ffffff !important;
+        animation: shieldPulse 0.4s ease-in-out alternate infinite;
+      }
+      @keyframes shieldPulse {
+        0% { transform: scale(1) translateZ(15px); }
+        100% { transform: scale(1.08) translateZ(18px); filter: brightness(1.25); }
+      }
+
+      /* Magical Protection Shield Glow on individual faces */
+      .magical-shield-face {
+        box-shadow: 0 0 25px #3b82f6, inset 0 0 10px #3b82f6 !important;
+        border-color: #60a5fa !important;
+        filter: brightness(1.3) saturate(1.2);
+      }
+
+      /* 3D disintegration dissolution animation */
+      .cube-container.disintegrating {
+        animation: disintegrate 0.75s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      @keyframes disintegrate {
+        0% { transform: translateZ(15px) scale(1) rotateZ(0deg); opacity: 1; filter: brightness(2) saturate(2); }
+        100% { transform: translateZ(60px) scale(0) rotateZ(360deg); opacity: 0; filter: brightness(4) blur(3px); }
+      }
       /* Red kill-flash bloom on target tile */
       @keyframes killBloom {
         0%   { opacity: 0.9; transform: scale(0.5); }
@@ -339,7 +500,7 @@ export default function App() {
     }
 
     const isProd = !window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1");
-    const backendHost = isProd ? "skirmish-jomt.onrender.com" : "127.0.0.1:8000";
+    const backendHost = isProd ? "le-jeu-de-la-guerre.onrender.com" : "127.0.0.1:8000";
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
     setIsConnecting(true);
@@ -380,18 +541,93 @@ export default function App() {
           setTimeout(() => setErrorMessage(''), 4000);
         }
       } else {
+        // Intercept unit death to trigger disintegration animations
+        const incomingIds = (data.units || []).map(u => u.id);
+        const deadUnits = currentUnitsRef.current.filter(u => !incomingIds.includes(u.id));
+
+        if (deadUnits.length > 0) {
+          setDyingUnits(prev => [...prev, ...deadUnits.map(du => ({ ...du, phase: 'ramming' }))]);
+          
+          // Phase 2: transition to disintegration at impact (350ms)
+          setTimeout(() => {
+            setDyingUnits(prev => prev.map(u => deadUnits.some(du => du.id === u.id) ? { ...u, phase: 'disintegrating' } : u));
+          }, 350);
+
+          // Phase 3: clean up from dying state (1100ms)
+          setTimeout(() => {
+            setDyingUnits(prev => prev.filter(u => !deadUnits.some(du => du.id === u.id)));
+          }, 1100);
+        }
+
+        // Combat Animation Triggers snapshot (before overwriting currentUnitsRef)
+        const currentUnits = currentUnitsRef.current;
+
+        if (data.lastCombat) {
+          const tx = data.lastCombat.targetX;
+          const ty = data.lastCombat.targetY;
+          const res = data.lastCombat.result;
+
+          // Look up the defending unit in the snapshot state before they were potentially deleted
+          const defender = currentUnits.find(u => u.x === tx && u.y === ty);
+          if (defender) {
+            const defenderSide = defender.side;
+            const attackerSide = defenderSide === 'North' ? 'South' : 'North';
+
+            // Find all Infantry/Cavalry attackers in range of the target in the snapshot
+            const attackers = currentUnits.filter(u => {
+              if (u.side !== attackerSide) return false;
+              const dx = Math.abs(u.x - tx);
+              const dy = Math.abs(u.y - ty);
+              const maxRange = u.type.toLowerCase() === 'artillery' ? 3 : 1;
+              return dx <= maxRange && dy <= maxRange;
+            });
+
+            // Trigger lunge animation for non-artillery attackers
+            attackers.forEach(attacker => {
+              const uType = attacker.type.toLowerCase();
+              if (uType !== 'artillery') {
+                const diffX = tx - attacker.x;
+                const diffY = ty - attacker.y;
+                const len = Math.hypot(diffX, diffY) || 1;
+                const dx = (diffX / len) * 0.45;
+                const dy = (diffY / len) * 0.45;
+
+                setLungingUnitIds(prev => ({ ...prev, [attacker.id]: { dx, dy } }));
+                setTimeout(() => {
+                  setLungingUnitIds(prev => {
+                    const next = { ...prev };
+                    delete next[attacker.id];
+                    return next;
+                  });
+                }, 350);
+              }
+            });
+
+            // Trigger protection shield & repel flashes if combat was repelled
+            if (res !== "DESTROY") {
+              setRepelFlash({ x: tx, y: ty, result: res });
+              setTimeout(() => setRepelFlash(null), 600);
+
+              setRepelShieldUnitId(defender.id);
+              setTimeout(() => setRepelShieldUnitId(null), 900);
+            }
+          }
+        }
+
+        // Now safe to update units state
         setUnits(data.units || []);
+        currentUnitsRef.current = data.units || [];
         if (data.cols !== undefined) setBoardCols(data.cols);
         if (data.rows !== undefined) setBoardRows(data.rows);
 
         if (data.arsenals) {
-          const n_ars = data.arsenals.North.map(([x, y]) => `${x},${y}`);
-          const s_ars = data.arsenals.South.map(([x, y]) => `${x},${y}`);
+          const n_ars = data.arsenals.North.map(([x,y]) => `${x},${y}`);
+          const s_ars = data.arsenals.South.map(([x,y]) => `${x},${y}`);
           setActiveArsenals([...n_ars, ...s_ars]);
         }
         if (data.fortresses) {
-          const server_forts = data.fortresses.map(([x, y]) => `${x},${y}`);
-          const server_arsenals = [...(data.arsenals?.North || []), ...(data.arsenals?.South || [])].map(([x, y]) => `${x},${y}`);
+          const server_forts = data.fortresses.map(([x,y]) => `${x},${y}`);
+          const server_arsenals = [...(data.arsenals?.North || []), ...(data.arsenals?.South || [])].map(([x,y]) => `${x},${y}`);
           const pure_forts = server_forts.filter(f => !server_arsenals.includes(f));
           setActiveForts(pure_forts);
         }
@@ -406,10 +642,16 @@ export default function App() {
 
         if (data.yourSide) setMySide(data.yourSide);
         if (data.players) setPlayers(data.players);
-        if (data.winner !== undefined) setWinner(data.winner);
-        if (data.lastCombat && data.lastCombat.result !== "DESTROY") {
-          setRepelFlash({ x: data.lastCombat.targetX, y: data.lastCombat.targetY, result: data.lastCombat.result });
-          setTimeout(() => setRepelFlash(null), 600);
+
+        // DELAY WINNER DECLARATION TO ALLOW ANIMATIONS TO RESOLVE
+        if (data.winner !== undefined) {
+          if (data.winner) {
+            setTimeout(() => {
+              setWinner(data.winner);
+            }, 1200);
+          } else {
+            setWinner(null);
+          }
         }
       }
     };
@@ -1114,108 +1356,273 @@ export default function App() {
               ))}
             </div>
 
-            {/* Grid Container */}
-            <div ref={gridRef} style={{ ...styles.gridContainer, gridTemplateColumns: `repeat(${boardCols}, minmax(0, 1fr))`, maxWidth: boardCols === 10 ? '550px' : '100%', margin: boardCols === 10 ? '0 auto' : '0' }}>
-              {/* Animated projectile dots */}
-              {tracers.map(t => (
-                <div
-                  key={t.id}
-                  className="projectile-dot"
-                  style={{
-                    width: `${t.size}px`,
-                    height: `${t.size}px`,
-                    backgroundColor: t.color,
-                    boxShadow: `0 0 8px ${t.color}, 0 0 3px #fff`,
-                    '--px0': `${t.x1}px`,
-                    '--py0': `${t.y1}px`,
-                    '--px1': `${t.x2}px`,
-                    '--py1': `${t.y2}px`,
-                    '--dur': t.dur
-                  }}
-                />
-              ))}
-
-              {cells.map(({ x, y, terrain, occupyingUnit, isNorthLoc, isSouthLoc, isReachable }) => {
-                const isSelected = occupyingUnit && occupyingUnit.id === selectedUnitId;
-                const isMultiSelected = occupyingUnit && multiSelectedIds.includes(occupyingUnit.id);
-                const isUnitConnected = occupyingUnit && connectedUnitIds.includes(occupyingUnit.id);
-                const inRange = isEnemyInAttackRange(x, y);
-                const tileKey = `${x},${y}`;
-                const residue = graveyardTiles[tileKey];
-                const hasResidue = residue && residue.count > 0;
-                const isFlashing = killFlash && killFlash.x === x && killFlash.y === y;
-                const isRepelling = repelFlash && repelFlash.x === x && repelFlash.y === y;
-
-                let cellClass = "";
-                if (isSelected) {
-                  cellClass = "cell-selected-active";
-                } else if (isMultiSelected) {
-                  const isFriendly = occupyingUnit.side === activeMySide;
-                  if (isFriendly) {
-                    cellClass = stackOrientation ? "cell-selected-multi-stack" : "cell-selected-multi-shape";
-                  } else {
-                    cellClass = stackOrientation ? "cell-selected-enemy-stack" : "cell-selected-enemy";
-                  }
-                } else if (isReachable) {
-                  cellClass = "cell-reachable";
-                } else if (inRange) {
-                  cellClass = "cell-attack-range";
-                }
-
-                return (
+            {/* 3D Perspective Wrap */}
+            <div className="grid-3d-perspective" style={{ width: '100%' }}>
+              <div
+                ref={gridRef}
+                className="grid-3d-board"
+                style={{
+                  ...styles.gridContainer,
+                  gridTemplateColumns: `repeat(${boardCols}, minmax(0, 1fr))`,
+                  maxWidth: boardCols === 10 ? '550px' : '100%',
+                  margin: boardCols === 10 ? '0 auto' : '0'
+                }}
+              >
+                {/* Animated projectile dots */}
+                {tracers.map(t => (
                   <div
-                    key={`${x}-${y}`}
-                    data-coord={tileKey}
-                    className={cellClass}
-                    onClick={() => handleCellClick(x, y)}
-                    onMouseEnter={() => setHoveredCell({ x, y })}
-                    onMouseLeave={() => setHoveredCell(null)}
+                    key={t.id}
+                    className="projectile-dot"
                     style={{
-                      ...styles.cell,
-                      backgroundColor: inRange ? 'rgba(239, 68, 68, 0.15)' : (isReachable ? 'rgba(16, 185, 129, 0.15)' : terrain.color),
-                      border: inRange ? '2px solid #ef4444' : (isReachable ? '2px solid #10b981' : (terrain.border || '1px solid #cbd5e1')),
-                      boxShadow: inRange ? 'inset 0 0 10px rgba(239, 68, 68, 0.15)' : (isReachable ? 'inset 0 0 10px rgba(16, 185, 129, 0.15)' : 'none'),
-                      cursor: isMyTurn ? 'pointer' : 'default'
+                      width: `${t.size}px`,
+                      height: `${t.size}px`,
+                      backgroundColor: t.color,
+                      boxShadow: `0 0 8px ${t.color}, 0 0 3px #fff`,
+                      '--px0': `${t.x1}px`,
+                      '--py0': `${t.y1}px`,
+                      '--px1': `${t.x2}px`,
+                      '--py1': `${t.y2}px`,
+                      '--dur': t.dur
                     }}
-                  >
-                    {/* Kill flash bloom */}
-                    {isFlashing && <div className="kill-flash" />}
-                    {isRepelling && <div className={repelFlash.result === "RETREAT" ? "repel-flash-amber" : "repel-flash-blue"} />}
+                  />
+                ))}
 
-                    {/* Skull on graveyard tile (behind live unit if reoccupied) */}
-                    {hasResidue && (
-                      <span
-                        className="skull-marker"
+                {cells.map(({ x, y, terrain, occupyingUnit, isNorthLoc, isSouthLoc, isReachable }) => {
+                  const isSelected = occupyingUnit && occupyingUnit.id === selectedUnitId;
+                  const isMultiSelected = occupyingUnit && multiSelectedIds.includes(occupyingUnit.id);
+                  const isUnitConnected = occupyingUnit && connectedUnitIds.includes(occupyingUnit.id);
+                  const inRange = isEnemyInAttackRange(x, y);
+                  const tileKey = `${x},${y}`;
+                  const residue = graveyardTiles[tileKey];
+                  const hasResidue = residue && residue.count > 0;
+                  const isFlashing = killFlash && killFlash.x === x && killFlash.y === y;
+                  const isRepelling = repelFlash && repelFlash.x === x && repelFlash.y === y;
+
+                  let cellClass = "";
+                  if (isSelected) {
+                    cellClass = "cell-selected-active";
+                  } else if (isMultiSelected) {
+                    const isFriendly = occupyingUnit.side === activeMySide;
+                    if (isFriendly) {
+                      cellClass = stackOrientation ? "cell-selected-multi-stack" : "cell-selected-multi-shape";
+                    } else {
+                      cellClass = stackOrientation ? "cell-selected-enemy-stack" : "cell-selected-enemy";
+                    }
+                  } else if (isReachable) {
+                    cellClass = "cell-reachable";
+                  } else if (inRange) {
+                    cellClass = "cell-attack-range";
+                  }
+
+                  return (
+                    <div
+                      key={`${x}-${y}`}
+                      data-coord={tileKey}
+                      className={`cell-3d ${cellClass}`}
+                      onClick={() => handleCellClick(x, y)}
+                      onMouseEnter={() => setHoveredCell({ x, y })}
+                      onMouseLeave={() => setHoveredCell(null)}
+                      style={{
+                        ...styles.cell,
+                        backgroundColor: inRange ? 'rgba(239, 68, 68, 0.15)' : (isReachable ? 'rgba(16, 185, 129, 0.15)' : terrain.color),
+                        border: inRange ? '2px solid #ef4444' : (isReachable ? '2px solid #10b981' : (terrain.border || '1px solid #cbd5e1')),
+                        boxShadow: inRange ? 'inset 0 0 10px rgba(239, 68, 68, 0.15)' : (isReachable ? 'inset 0 0 10px rgba(16, 185, 129, 0.15)' : 'none'),
+                        cursor: isMyTurn ? 'pointer' : 'default',
+                        transformStyle: 'preserve-3d'
+                      }}
+                    >
+                      {/* Kill flash bloom */}
+                      {isFlashing && <div className="kill-flash" />}
+                      {isRepelling && <div className={repelFlash.result === "RETREAT" ? "repel-flash-amber" : "repel-flash-blue"} />}
+
+                      {/* Skull on graveyard tile (behind live unit if reoccupied) */}
+                      {hasResidue && (
+                        <span
+                          className="skull-marker"
+                          style={{
+                            filter: residue.side === 'North'
+                              ? 'drop-shadow(0 0 3px #002fa7) sepia(100%) hue-rotate(190deg) saturate(300%)'
+                              : 'drop-shadow(0 0 3px #991b1b) sepia(100%) hue-rotate(330deg) saturate(300%)'
+                          }}
+                        >
+                          💀
+                        </span>
+                      )}
+
+                      {!occupyingUnit && (isNorthLoc || isSouthLoc) && (
+                        <div style={{ ...styles.locDot, backgroundColor: isNorthLoc && isSouthLoc ? '#6b21a8' : isNorthLoc ? '#002fa7' : '#991b1b' }} />
+                      )}
+
+                      <span style={{ ...styles.terrainLabel, color: '#002fa7', opacity: 0.3 }}>{terrain.label}</span>
+                    </div>
+                  );
+                })}
+
+                {/* 3D absolute-positioned units overlay with transitions */}
+                {units.filter(u => u.x < 10 && u.y < 10).map(unit => {
+                  const x = unit.x;
+                  const y = unit.y;
+                  const isSelected = unit.id === selectedUnitId;
+                  const isMultiSelected = multiSelectedIds.includes(unit.id);
+                  const isUnitConnected = connectedUnitIds.includes(unit.id);
+                  const isMoving = movingUnitId === unit.id;
+                  const isHovered = hoveredCell && hoveredCell.x === x && hoveredCell.y === y;
+                  const hasShield = repelShieldUnitId === unit.id;
+
+                  // Lunge offsets during attack/ramming animations (in board percentages)
+                  const lunge = lungingUnitIds[unit.id];
+                  const dx = lunge ? lunge.dx : 0;
+                  const dy = lunge ? lunge.dy : 0;
+
+                  return (
+                    <div
+                      key={unit.id}
+                      className="absolute-unit-wrapper"
+                      style={{
+                        left: `calc(${x * 10}% + ${dx * 10}%)`,
+                        top: `calc(${y * 10}% + ${dy * 10}%)`
+                      }}
+                    >
+                      <div
+                        className={`cube-container ${isSelected || isMultiSelected || isHovered ? 'lifted' : ''} ${isMoving ? 'moving' : ''}`}
+                        onClick={() => handleCellClick(x, y)}
+                        onMouseEnter={() => setHoveredCell({ x, y })}
+                        onMouseLeave={() => setHoveredCell(null)}
+                      >
+                        {/* Top Face */}
+                        <div
+                          className={`cube-face cube-face-top ${hasShield ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#002fa7' : 'rgba(0, 47, 167, 0.22)')
+                              : (isUnitConnected ? '#991b1b' : 'rgba(153, 27, 27, 0.22)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+                            border: isUnitConnected ? '1.5px solid rgba(255, 255, 255, 0.6)' : '1px dashed rgba(255, 255, 255, 0.35)'
+                          }}
+                        >
+                          {unit.symbol}
+                        </div>
+                        {/* Front Face */}
+                        <div
+                          className={`cube-face cube-face-front ${hasShield ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#002687' : 'rgba(0, 38, 135, 0.18)')
+                              : (isUnitConnected ? '#7f1d1d' : 'rgba(127, 29, 29, 0.18)'),
+                            border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
+                          }}
+                        />
+                        {/* Right Face */}
+                        <div
+                          className={`cube-face cube-face-right ${hasShield ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#001a5e' : 'rgba(0, 26, 94, 0.18)')
+                              : (isUnitConnected ? '#5c1414' : 'rgba(92, 20, 20, 0.18)'),
+                            border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
+                          }}
+                        />
+                        {/* Left Face */}
+                        <div
+                          className={`cube-face cube-face-left ${hasShield ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#00227a' : 'rgba(0, 34, 122, 0.18)')
+                              : (isUnitConnected ? '#8c1f1f' : 'rgba(140, 31, 31, 0.18)'),
+                            border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
+                          }}
+                        />
+                        {/* Back Face */}
+                        <div
+                          className={`cube-face cube-face-back ${hasShield ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#002cb0' : 'rgba(0, 44, 176, 0.18)')
+                              : (isUnitConnected ? '#b22424' : 'rgba(178, 36, 36, 0.18)'),
+                            border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
+                          }}
+                        />
+                      </div>
+                      {/* Dynamic Drop Shadow */}
+                      <div
+                        className="cube-shadow"
                         style={{
-                          filter: residue.side === 'North'
-                            ? 'drop-shadow(0 0 3px #002fa7) sepia(100%) hue-rotate(190deg) saturate(300%)'
-                            : 'drop-shadow(0 0 3px #991b1b) sepia(100%) hue-rotate(330deg) saturate(300%)'
+                          opacity: isUnitConnected ? 1 : 0.3
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* 3D absolute-positioned dying units disintegration overlay */}
+                {dyingUnits.map(unit => {
+                  const x = unit.x;
+                  const y = unit.y;
+                  const isDisintegrating = unit.phase === 'disintegrating';
+
+                  return (
+                    <div
+                      key={`dying-${unit.id}`}
+                      className="absolute-unit-wrapper"
+                      style={{
+                        left: `${x * 10}%`,
+                        top: `${y * 10}%`
+                      }}
+                    >
+                      <div
+                        className={`cube-container ${isDisintegrating ? 'disintegrating' : ''}`}
+                        style={{
+                          filter: 'opacity(0.85)'
                         }}
                       >
-                        💀
-                      </span>
-                    )}
-
-                    {!occupyingUnit && (isNorthLoc || isSouthLoc) && (
-                      <div style={{ ...styles.locDot, backgroundColor: isNorthLoc && isSouthLoc ? '#6b21a8' : isNorthLoc ? '#002fa7' : '#991b1b' }} />
-                    )}
-
-                    {occupyingUnit ? (
-                      <div style={{
-                        ...styles.unitBadge,
-                        backgroundColor: occupyingUnit.side === 'North' ? '#002fa7' : '#991b1b',
-                        borderColor: occupyingUnit.side === 'North' ? '#002fa7' : '#991b1b',
-                        color: '#ffffff',
-                        opacity: isUnitConnected ? 1 : 0.35
-                      }}>
-                        {occupyingUnit.symbol}
+                        {/* Top Face */}
+                        <div
+                          className="cube-face cube-face-top"
+                          style={{
+                            backgroundColor: unit.side === 'North' ? '#002fa7' : '#991b1b',
+                            border: '1.5px solid rgba(255, 255, 255, 0.6)'
+                          }}
+                        >
+                          {unit.symbol}
+                        </div>
+                        {/* Front Face */}
+                        <div
+                          className="cube-face cube-face-front"
+                          style={{
+                            backgroundColor: unit.side === 'North' ? '#002687' : '#7f1d1d',
+                            border: '1px solid rgba(255, 255, 255, 0.2)'
+                          }}
+                        />
+                        {/* Right Face */}
+                        <div
+                          className="cube-face cube-face-right"
+                          style={{
+                            backgroundColor: unit.side === 'North' ? '#001a5e' : '#5c1414',
+                            border: '1px solid rgba(255, 255, 255, 0.2)'
+                          }}
+                        />
+                        {/* Left Face */}
+                        <div
+                          className="cube-face cube-face-left"
+                          style={{
+                            backgroundColor: unit.side === 'North' ? '#00227a' : '#8c1f1f',
+                            border: '1px solid rgba(255, 255, 255, 0.2)'
+                          }}
+                        />
+                        {/* Back Face */}
+                        <div
+                          className="cube-face cube-face-back"
+                          style={{
+                            backgroundColor: unit.side === 'North' ? '#002cb0' : '#b22424',
+                            border: '1px solid rgba(255, 255, 255, 0.2)'
+                          }}
+                        />
                       </div>
-                    ) : (
-                      <span style={{ ...styles.terrainLabel, color: '#002fa7', opacity: 0.3 }}>{terrain.label}</span>
-                    )}
-                  </div>
-                );
-              })}
+                      <div className="cube-shadow" style={{ opacity: isDisintegrating ? 0 : 0.4, transition: 'opacity 0.6s ease' }} />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
