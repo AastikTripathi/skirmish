@@ -664,7 +664,7 @@ export default function App() {
     }
 
     const isProd = !window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1");
-    const backendHost = isProd ? "le-jeu-de-la-guerre.onrender.com" : "127.0.0.1:8000";
+    const backendHost = isProd ? "skirmish-jomt.onrender.com" : "127.0.0.1:8000";
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
     setIsConnecting(true);
