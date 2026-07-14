@@ -459,7 +459,7 @@ async def run_ai_simulation(room_id: str):
                 if check_win_condition(st["units"], room.get("arsenals")):
                     return
 
-                delay = 3.0 if room.get("layout_type") == "skirmish_10x10" else 0.05
+                delay = 0.8 if room.get("layout_type") == "skirmish_10x10" else 0.05
                 await asyncio.sleep(delay)
 
                 room = rooms.get(room_id)
@@ -530,9 +530,8 @@ async def run_ai_turn_if_needed(room_id: str):
 
     if st["turn"] == ai_side and not check_win_condition(st["units"], room.get("arsenals")):
         ai_agent = WarGameAI(engine, side=ai_side, position_history=room.get("ai_position_history"), turn_counter=room.get("turn_counter", 0))
-
         while st["turn"] == ai_side and st["moves_left"] > 0:
-            delay = 3.0 if room.get("layout_type") == "skirmish_10x10" else 0.8
+            delay = 0.8
             await asyncio.sleep(delay)
             room = rooms.get(room_id)
             if not room or not room["connections"]:
