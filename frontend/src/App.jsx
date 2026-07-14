@@ -78,17 +78,63 @@ export default function App() {
   const [lungingUnitIds, setLungingUnitIds] = useState({});
   const [repelShieldUnitId, setRepelShieldUnitId] = useState(null);
   const [dyingUnits, setDyingUnits] = useState([]);
-
+  const [rollingUnitId, setRollingUnitId] = useState(null);
+  const [rollDirection, setRollDirection] = useState(null); // 'north' | 'south' | 'east' | 'west' | 'ne' | 'nw' | 'se' | 'sw'
+  const [delayedFaces, setDelayedFaces] = useState({});
+  const [mines, setMines] = useState([]);
+  const [lazarusPits, setLazarusPits] = useState([]);
+  const [awaitingLazarusChoice, setAwaitingLazarusChoice] = useState(null);
   useEffect(() => {
     const prevUnits = prevUnitsRef.current;
     if (prevUnits && prevUnits.length > 0) {
       for (const u of units) {
         const prev = prevUnits.find(p => p.id === u.id);
         if (prev && (prev.x !== u.x || prev.y !== u.y)) {
-          setMovingUnitId(u.id);
-          const tid = setTimeout(() => {
-            setMovingUnitId(null);
-          }, 600);
+          const isCavalry = u.type.toLowerCase() === 'cavalry';
+          if (!isCavalry) {
+            const dx = u.x - prev.x;
+            const dy = u.y - prev.y;
+            let dir = null;
+            if (dx > 0 && dy === 0) dir = 'east';
+            else if (dx < 0 && dy === 0) dir = 'west';
+            else if (dx === 0 && dy > 0) dir = 'south';
+            else if (dx === 0 && dy < 0) dir = 'north';
+            else if (dx > 0 && dy < 0) dir = 'ne';
+            else if (dx < 0 && dy < 0) dir = 'nw';
+            else if (dx > 0 && dy > 0) dir = 'se';
+            else if (dx < 0 && dy > 0) dir = 'sw';
+
+            if (dir) {
+              setRollingUnitId(u.id);
+              setRollDirection(dir);
+              // Freeze face symbols at their pre-rotated state during the 600ms tumble
+              const oldFaces = prev.faces || {
+                top: prev.symbol,
+                bottom: prev.symbol === 'A' ? 'I' : 'A',
+                front: prev.symbol === 'C' ? 'I' : 'C',
+                back: prev.symbol === 'R' ? 'I' : 'R',
+                left: 'I',
+                right: 'A'
+              };
+              setDelayedFaces(prevMap => ({ ...prevMap, [u.id]: oldFaces }));
+
+              setTimeout(() => {
+                setRollingUnitId(null);
+                setRollDirection(null);
+                setDelayedFaces(prevMap => {
+                  const next = { ...prevMap };
+                  delete next[u.id];
+                  return next;
+                });
+              }, 600);
+            }
+          } else {
+            // Cavalry slides and lifts
+            setMovingUnitId(u.id);
+            setTimeout(() => {
+              setMovingUnitId(null);
+            }, 600);
+          }
           break;
         }
       }
@@ -131,10 +177,11 @@ export default function App() {
         height: 30px;
         transform-style: preserve-3d;
         transform: translateZ(15px);
-        transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.25s ease;
+        transition: filter 0.25s ease;
       }
       .cube-container.lifted {
         transform: translateZ(25px);
+        transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       }
       .cube-container.moving {
         transform: translateZ(45px) rotateX(8deg) rotateY(8deg);
@@ -175,6 +222,11 @@ export default function App() {
       .cube-face-back {
         transform: rotateX(90deg) translateZ(15px);
         filter: brightness(90%);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .cube-face-bottom {
+        transform: rotateX(180deg) translateZ(15px);
+        filter: brightness(60%);
         border: 1px solid rgba(255, 255, 255, 0.2);
       }
       .cube-shadow {
@@ -256,6 +308,69 @@ export default function App() {
       @keyframes disintegrate {
         0% { transform: translateZ(15px) scale(1) rotateZ(0deg); opacity: 1; filter: brightness(2) saturate(2); }
         100% { transform: translateZ(60px) scale(0) rotateZ(360deg); opacity: 0; filter: brightness(4) blur(3px); }
+      }
+
+      /* 3D Rolling animations */
+      .cube-container.roll-east {
+        animation: rollEastAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-west {
+        animation: rollWestAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-north {
+        animation: rollNorthAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-south {
+        animation: rollSouthAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-ne {
+        animation: rollNEAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-nw {
+        animation: rollNWAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-se {
+        animation: rollSEAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+      .cube-container.roll-sw {
+        animation: rollSWAnim 0.6s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+
+      @keyframes rollEastAnim {
+        0% { transform: translateZ(15px) rotateY(0deg); }
+        100% { transform: translateZ(15px) rotateY(90deg); }
+      }
+      @keyframes rollWestAnim {
+        0% { transform: translateZ(15px) rotateY(0deg); }
+        100% { transform: translateZ(15px) rotateY(-90deg); }
+      }
+      @keyframes rollNorthAnim {
+        0% { transform: translateZ(15px) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateX(90deg); }
+      }
+      @keyframes rollSouthAnim {
+        0% { transform: translateZ(15px) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateX(-90deg); }
+      }
+      @keyframes rollNEAnim {
+        0% { transform: translateZ(15px) rotateY(0deg) rotateX(0deg); }
+        50% { transform: translateZ(15px) rotateY(90deg) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateY(90deg) rotateX(90deg); }
+      }
+      @keyframes rollNWAnim {
+        0% { transform: translateZ(15px) rotateY(0deg) rotateX(0deg); }
+        50% { transform: translateZ(15px) rotateY(-90deg) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateY(-90deg) rotateX(90deg); }
+      }
+      @keyframes rollSEAnim {
+        0% { transform: translateZ(15px) rotateY(0deg) rotateX(0deg); }
+        50% { transform: translateZ(15px) rotateY(90deg) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateY(90deg) rotateX(-90deg); }
+      }
+      @keyframes rollSWAnim {
+        0% { transform: translateZ(15px) rotateY(0deg) rotateX(0deg); }
+        50% { transform: translateZ(15px) rotateY(-90deg) rotateX(0deg); }
+        100% { transform: translateZ(15px) rotateY(-90deg) rotateX(-90deg); }
       }
       /* Red kill-flash bloom on target tile */
       @keyframes killBloom {
@@ -360,6 +475,55 @@ export default function App() {
   border: 2px solid #ef4444 !important;
   z-index: 5 !important;
   background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+/* Skirmish Lazarus Pits, Mines, and Shields */
+.cell-lazarus-pit {
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.45) 0%, rgba(8, 145, 178, 0.15) 70%) !important;
+  border: 2px dashed #06b6d4 !important;
+  box-shadow: inset 0 0 15px rgba(6, 182, 212, 0.3) !important;
+  animation: lazarusPulse 2s infinite ease-in-out;
+}
+@keyframes lazarusPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35) saturate(1.2); }
+}
+.mine-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle, #f43f5e 20%, #9f1239 80%);
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #f43f5e, inset 0 0 3px rgba(0,0,0,0.5);
+  animation: minePulse 1s infinite alternate ease-in-out;
+  z-index: 50;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(2px);
+}
+@keyframes minePulse {
+  0% { transform: translate(-50%, -50%) translateZ(2px) scale(0.85); box-shadow: 0 0 4px #f43f5e; }
+  100% { transform: translate(-50%, -50%) translateZ(2px) scale(1.1); box-shadow: 0 0 10px #f43f5e; }
+}
+.magical-shield-bubble {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.15) 30%, rgba(59, 130, 246, 0.45) 85%);
+  border: 1.5px solid rgba(147, 197, 253, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.6), inset 0 0 8px rgba(96, 165, 250, 0.5);
+  pointer-events: none;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(15px);
+  animation: shieldPulse 1.8s infinite ease-in-out;
+}
+@keyframes shieldPulse {
+  0%, 100% { transform: translate(-50%, -50%) translateZ(15px) scale(0.95); opacity: 0.85; }
+  50% { transform: translate(-50%, -50%) translateZ(15px) scale(1.05); opacity: 1; }
 }
     `;
     document.head.appendChild(styleSheet);
@@ -500,7 +664,7 @@ export default function App() {
     }
 
     const isProd = !window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1");
-    const backendHost = isProd ? "skirmish-jomt.onrender.com" : "127.0.0.1:8000";
+    const backendHost = isProd ? "le-jeu-de-la-guerre.onrender.com" : "127.0.0.1:8000";
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
     setIsConnecting(true);
@@ -639,6 +803,9 @@ export default function App() {
         setConnectedUnitIds(data.connectedUnitIds || []);
         setMovedUnitsThisTurn(data.movedUnitsThisTurn || []);
         setCanUndo(data.canUndo ?? false);
+        setMines(data.mines || []);
+        setLazarusPits(data.lazarusPits || []);
+        setAwaitingLazarusChoice(data.awaitingLazarusChoice || null);
 
         if (data.yourSide) setMySide(data.yourSide);
         if (data.players) setPlayers(data.players);
@@ -1149,8 +1316,95 @@ export default function App() {
     );
   }
 
+  // LAZARUS CHOICE POPUP OVERLAY
+  let lazarusChoiceOverlay = null;
+  if (awaitingLazarusChoice) {
+    const isMyChoice = awaitingLazarusChoice.side === activeMySide;
+    if (isMyChoice) {
+      const choices = [
+        { sym: 'I', name: 'Infantry', desc: 'Standard combat unit' },
+        { sym: 'A', name: 'Artillery', desc: 'Ranged support' },
+        { sym: 'C', name: 'Cavalry', desc: 'Fast slides' },
+        { sym: 'R', name: 'Relay', desc: 'Supply network' },
+        { sym: 'M', name: 'Mine Creator', desc: 'Leaves landmines' },
+        { sym: 'S', name: 'Shield / Mirror', desc: 'Attack immune' }
+      ];
+      lazarusChoiceOverlay = (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', border: '2px solid #06b6d4', borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(6, 182, 212, 0.25)', padding: '32px 24px',
+            maxWidth: '480px', width: '90%', boxSizing: 'border-box', textAlign: 'center', color: '#0f172a'
+          }}>
+            <div style={{ fontSize: '11px', color: '#06b6d4', letterSpacing: '4px', fontWeight: 'bold', marginBottom: '8px' }}>
+              LAZARUS PIT ACTIVE
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '16px' }}>
+              RESHAPE CUBE IDENTITY
+            </div>
+            <p style={{ fontSize: '13px', color: '#475569', marginBottom: '24px' }}>
+              Select a tactical symbol to rotate to the top face:
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {choices.map(c => (
+                <button
+                  key={c.sym}
+                  onClick={() => {
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                      socket.send(JSON.stringify({
+                        action: 'choose_lazarus_face',
+                        symbol: c.sym
+                      }));
+                    }
+                  }}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                    padding: '12px 6px', border: '1px solid #e2e8f0', borderRadius: '8px',
+                    backgroundColor: '#f8fafc', cursor: 'pointer', boxSizing: 'border-box'
+                  }}
+                >
+                  <span style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0891b2' }}>{c.sym}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0f172a' }}>{c.name}</span>
+                  <span style={{ fontSize: '9px', color: '#64748b' }}>{c.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      lazarusChoiceOverlay = (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', border: '1px solid #475569', borderRadius: '8px',
+            padding: '24px', maxWidth: '360px', width: '90%', boxSizing: 'border-box', textAlign: 'center', color: '#0f172a'
+          }}>
+            <div style={{ fontSize: '11px', color: '#64748b', letterSpacing: '2px', fontWeight: 'bold', marginBottom: '8px' }}>
+              COMMUNICATIONS INTERCEPT
+            </div>
+            <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '12px' }}>
+              OPPONENT RESHAPING CUBE
+            </div>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+              Waiting for commander to choose a face in the Lazarus Pit...
+            </p>
+          </div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div style={styles.container}>
+      {lazarusChoiceOverlay}
       {/* HEADER PANELS - Structurally height locked to stop layout shifting */}
       <div style={styles.header}>
         <div style={styles.headerTitleSection}>
@@ -1398,6 +1652,9 @@ export default function App() {
                   const isFlashing = killFlash && killFlash.x === x && killFlash.y === y;
                   const isRepelling = repelFlash && repelFlash.x === x && repelFlash.y === y;
 
+                  const isLazarusPit = lazarusPits.some(([px, py]) => px === x && py === y);
+                  const hasMine = mines.some(m => m.x === x && m.y === y);
+
                   let cellClass = "";
                   if (isSelected) {
                     cellClass = "cell-selected-active";
@@ -1412,6 +1669,8 @@ export default function App() {
                     cellClass = "cell-reachable";
                   } else if (inRange) {
                     cellClass = "cell-attack-range";
+                  } else if (isLazarusPit) {
+                    cellClass = "cell-lazarus-pit";
                   }
 
                   return (
@@ -1449,8 +1708,14 @@ export default function App() {
                         </span>
                       )}
 
+                      {hasMine && <div className="mine-marker" />}
+
                       {!occupyingUnit && (isNorthLoc || isSouthLoc) && (
                         <div style={{ ...styles.locDot, backgroundColor: isNorthLoc && isSouthLoc ? '#6b21a8' : isNorthLoc ? '#002fa7' : '#991b1b' }} />
+                      )}
+
+                      {isLazarusPit && !occupyingUnit && (
+                        <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) translateZ(4px)', fontSize: '11px', opacity: 0.8 }}>🌀</span>
                       )}
 
                       <span style={{ ...styles.terrainLabel, color: '#002fa7', opacity: 0.3 }}>{terrain.label}</span>
@@ -1474,6 +1739,10 @@ export default function App() {
                   const dx = lunge ? lunge.dx : 0;
                   const dy = lunge ? lunge.dy : 0;
 
+                  const isRolling = rollingUnitId === unit.id;
+                  const faces = delayedFaces[unit.id] || unit.faces;
+                  const isShieldUnit = faces?.top === 'S';
+
                   return (
                     <div
                       key={unit.id}
@@ -1484,14 +1753,14 @@ export default function App() {
                       }}
                     >
                       <div
-                        className={`cube-container ${isSelected || isMultiSelected || isHovered ? 'lifted' : ''} ${isMoving ? 'moving' : ''}`}
+                        className={`cube-container ${isSelected || isMultiSelected || isHovered ? 'lifted' : ''} ${isMoving ? 'moving' : ''} ${isRolling ? `roll-${rollDirection}` : ''}`}
                         onClick={() => handleCellClick(x, y)}
                         onMouseEnter={() => setHoveredCell({ x, y })}
                         onMouseLeave={() => setHoveredCell(null)}
                       >
                         {/* Top Face */}
                         <div
-                          className={`cube-face cube-face-top ${hasShield ? 'magical-shield-face' : ''}`}
+                          className={`cube-face cube-face-top ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
                           style={{
                             backgroundColor: unit.side === 'North'
                               ? (isUnitConnected ? '#002fa7' : 'rgba(0, 47, 167, 0.22)')
@@ -1500,48 +1769,73 @@ export default function App() {
                             border: isUnitConnected ? '1.5px solid rgba(255, 255, 255, 0.6)' : '1px dashed rgba(255, 255, 255, 0.35)'
                           }}
                         >
-                          {unit.symbol}
+                          {faces?.top || unit.symbol}
                         </div>
                         {/* Front Face */}
                         <div
-                          className={`cube-face cube-face-front ${hasShield ? 'magical-shield-face' : ''}`}
+                          className={`cube-face cube-face-front ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
                           style={{
                             backgroundColor: unit.side === 'North'
                               ? (isUnitConnected ? '#002687' : 'rgba(0, 38, 135, 0.18)')
                               : (isUnitConnected ? '#7f1d1d' : 'rgba(127, 29, 29, 0.18)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
                             border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
                           }}
-                        />
+                        >
+                          {faces?.front || 'C'}
+                        </div>
                         {/* Right Face */}
                         <div
-                          className={`cube-face cube-face-right ${hasShield ? 'magical-shield-face' : ''}`}
+                          className={`cube-face cube-face-right ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
                           style={{
                             backgroundColor: unit.side === 'North'
                               ? (isUnitConnected ? '#001a5e' : 'rgba(0, 26, 94, 0.18)')
                               : (isUnitConnected ? '#5c1414' : 'rgba(92, 20, 20, 0.18)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
                             border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
                           }}
-                        />
+                        >
+                          {faces?.right || 'A'}
+                        </div>
                         {/* Left Face */}
                         <div
-                          className={`cube-face cube-face-left ${hasShield ? 'magical-shield-face' : ''}`}
+                          className={`cube-face cube-face-left ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
                           style={{
                             backgroundColor: unit.side === 'North'
                               ? (isUnitConnected ? '#00227a' : 'rgba(0, 34, 122, 0.18)')
                               : (isUnitConnected ? '#8c1f1f' : 'rgba(140, 31, 31, 0.18)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
                             border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
                           }}
-                        />
+                        >
+                          {faces?.left || 'I'}
+                        </div>
                         {/* Back Face */}
                         <div
-                          className={`cube-face cube-face-back ${hasShield ? 'magical-shield-face' : ''}`}
+                          className={`cube-face cube-face-back ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
                           style={{
                             backgroundColor: unit.side === 'North'
                               ? (isUnitConnected ? '#002cb0' : 'rgba(0, 44, 176, 0.18)')
                               : (isUnitConnected ? '#b22424' : 'rgba(178, 36, 36, 0.18)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
                             border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
                           }}
-                        />
+                        >
+                          {faces?.back || 'R'}
+                        </div>
+                        {/* Bottom Face */}
+                        <div
+                          className={`cube-face cube-face-bottom ${hasShield || isShieldUnit ? 'magical-shield-face' : ''}`}
+                          style={{
+                            backgroundColor: unit.side === 'North'
+                              ? (isUnitConnected ? '#00124a' : 'rgba(0, 18, 74, 0.18)')
+                              : (isUnitConnected ? '#4a0b0b' : 'rgba(74, 11, 11, 0.18)'),
+                            color: isUnitConnected ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+                            border: isUnitConnected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)'
+                          }}
+                        >
+                          {faces?.bottom || 'A'}
+                        </div>
                       </div>
                       {/* Dynamic Drop Shadow */}
                       <div
