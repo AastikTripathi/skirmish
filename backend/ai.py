@@ -18,7 +18,9 @@ class WarGameAI:
             "cavalry": 55,
             "relay": 95,
             "infantry": 20,
-            "arsenal": 1000
+            "arsenal": 1000,
+            "mine": 25,
+            "shield": 35
         }
         self.macro_directives = {}
         self.macro_state = "STANDARD"
@@ -1087,9 +1089,64 @@ class WarGameAI:
                 if (action["x"], action["y"]) in enemy_arsenals:
                     mod += 15000.0  # Huge bonus to capture/occupy an enemy arsenal!
 
-                for u in temp:
-                    if u.get("id") == act_uid:
-                        u["x"], u["y"] = action["x"], action["y"]
+                # 1. Simulate mine detonation
+                landed_on_mine = any(m["x"] == action["x"] and m["y"] == action["y"] for m in current_state.get("mines", []))
+                if landed_on_mine:
+                    temp = [unit for unit in temp if unit["id"] != act_uid]
+                else:
+                    # 2. Simulate standard movement & 3D face rotation
+                    for u in temp:
+                        if u.get("id") == act_uid:
+                            dx = action["x"] - u["x"]
+                            dy = action["y"] - u["y"]
+                            u["x"], u["y"] = action["x"], action["y"]
+                            if u["type"].lower() != "cavalry":
+                                from server import rotate_cube_faces
+                                faces = u.get("faces", {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"})
+                                new_faces = rotate_cube_faces(faces, dx, dy)
+                                u["faces"] = new_faces
+                                top_sym = new_faces["top"]
+                                u["symbol"] = top_sym
+                                if top_sym == "I": u["type"] = "infantry"
+                                elif top_sym == "A": u["type"] = "artillery"
+                                elif top_sym == "C": u["type"] = "cavalry"
+                                elif top_sym == "R": u["type"] = "relay"
+                                elif top_sym == "M": u["type"] = "mine"
+                                elif top_sym == "S": u["type"] = "shield"
+                            break
+
+                    # 3. Simulate optimal Lazarus Pit choice
+                    if (action["x"], action["y"]) in {(2, 4), (7, 5)}:
+                        best_lazarus_symbol = "I"
+                        best_lazarus_score = -999999.0
+                        for test_sym in ("I", "A", "C", "R", "M", "S"):
+                            for u in temp:
+                                if u["id"] == act_uid:
+                                    u["symbol"] = test_sym
+                                    if test_sym == "I": u["type"] = "infantry"
+                                    elif test_sym == "A": u["type"] = "artillery"
+                                    elif test_sym == "C": u["type"] = "cavalry"
+                                    elif test_sym == "R": u["type"] = "relay"
+                                    elif test_sym == "M": u["type"] = "mine"
+                                    elif test_sym == "S": u["type"] = "shield"
+                                    break
+                            try:
+                                test_score = self.evaluate_board(temp, base_enemy_connected=base_enemy_connected)
+                            except:
+                                test_score = -50000.0
+                            if test_score > best_lazarus_score:
+                                best_lazarus_score = test_score
+                                best_lazarus_symbol = test_sym
+                        for u in temp:
+                            if u["id"] == act_uid:
+                                u["symbol"] = best_lazarus_symbol
+                                if best_lazarus_symbol == "I": u["type"] = "infantry"
+                                elif best_lazarus_symbol == "A": u["type"] = "artillery"
+                                elif best_lazarus_symbol == "C": u["type"] = "cavalry"
+                                elif best_lazarus_symbol == "R": u["type"] = "relay"
+                                elif best_lazarus_symbol == "M": u["type"] = "mine"
+                                elif best_lazarus_symbol == "S": u["type"] = "shield"
+                                break
 
                 # ── DYNAMIC POTENTIAL RISK ASSESSMENT (FEAR OF CERTAIN DEATH) ──
                 try:
