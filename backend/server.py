@@ -20,8 +20,38 @@ engine = GameEngine()
 rooms = {}
 
 
+def rotate_cube_faces(faces: dict, dx: int, dy: int) -> dict:
+    new_faces = faces.copy()
+    if dx > 0 and dy == 0:  # East
+        new_faces["top"] = faces["left"]
+        new_faces["bottom"] = faces["right"]
+        new_faces["left"] = faces["bottom"]
+        new_faces["right"] = faces["top"]
+    elif dx < 0 and dy == 0:  # West
+        new_faces["top"] = faces["right"]
+        new_faces["bottom"] = faces["left"]
+        new_faces["left"] = faces["top"]
+        new_faces["right"] = faces["bottom"]
+    elif dx == 0 and dy > 0:  # South
+        new_faces["top"] = faces["back"]
+        new_faces["bottom"] = faces["front"]
+        new_faces["front"] = faces["top"]
+        new_faces["back"] = faces["bottom"]
+    elif dx == 0 and dy < 0:  # North
+        new_faces["top"] = faces["front"]
+        new_faces["bottom"] = faces["back"]
+        new_faces["front"] = faces["bottom"]
+        new_faces["back"] = faces["top"]
+    elif dx != 0 or dy != 0:  # Diagonal (Two-step roll: first horizontal, then vertical)
+        new_faces = rotate_cube_faces(faces, dx, 0)
+        new_faces = rotate_cube_faces(new_faces, 0, dy)
+    return new_faces
+
+
 def get_initial_state():
     return {
+        "mines": [],
+        "awaiting_lazarus_choice": None,
         "units": [
             # === NORTH FORCES (17 Units Total) ===
             {"id": "n-inf-1", "side": "North", "type": "Infantry", "symbol": "I", "x": 4, "y": 4},
@@ -362,19 +392,20 @@ def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, p
                 "North": {(4, 0)},
                 "South": {(5, 9)}
             },
-            "fortresses": {(4, 0), (5, 9)}
+            "fortresses": {(4, 0), (5, 9)},
+            "lazarus_pits": {(2, 4), (7, 5)}
         }
         rooms[room_id]["state"]["units"] = [
-            # North Forces
-            {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0},
-            {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1},
-            {"id": "n-inf-1", "type": "infantry", "symbol": "I", "side": "North", "x": 3, "y": 2},
-            {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2},
-            # South Forces
-            {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9},
-            {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8},
-            {"id": "s-inf-1", "type": "infantry", "symbol": "I", "side": "South", "x": 6, "y": 7},
-            {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7}
+            # North Forces (Unique faces: I, A, C, R, M, S)
+            {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+            {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+            {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+            {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
+            # South Forces (Unique faces: I, A, C, R, M, S)
+            {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+            {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+            {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+            {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
         ]
 
 
@@ -420,7 +451,10 @@ async def broadcast_room_state(room_id: str):
             "North": list(room.get("arsenals", {}).get("North", [])),
             "South": list(room.get("arsenals", {}).get("South", []))
         },
-        "fortresses": list(room.get("fortresses", []))
+        "fortresses": list(room.get("fortresses", [])),
+        "lazarusPits": [[x, y] for x, y in room.get("lazarus_pits", [])],
+        "mines": st.get("mines", []),
+        "awaitingLazarusChoice": st.get("awaiting_lazarus_choice")
     }
 
     for conn in room["connections"]:
@@ -475,7 +509,27 @@ async def run_ai_simulation(room_id: str):
                 if best_act["action_type"] == "move":
                     for u in st["units"]:
                         if u["id"] == best_act["unitId"]:
+                            dx = best_act["x"] - u["x"]
+                            dy = best_act["y"] - u["y"]
                             u["x"], u["y"] = best_act["x"], best_act["y"]
+                            if u["type"].lower() != "cavalry":
+                                faces = u.get("faces", {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I", "right": "A"})
+                                new_faces = rotate_cube_faces(faces, dx, dy)
+                                u["faces"] = new_faces
+                                top_sym = new_faces["top"]
+                                u["symbol"] = top_sym
+                                if top_sym == "I":
+                                    u["type"] = "infantry"
+                                elif top_sym == "A":
+                                    u["type"] = "artillery"
+                                elif top_sym == "C":
+                                    u["type"] = "cavalry"
+                                elif top_sym == "R":
+                                    u["type"] = "relay"
+                                print(f"🎲 [ROTATION LOG] Unit ID={best_act['unitId']} moved dx={dx}, dy={dy}")
+                                print(f"   BEFORE faces: {faces}")
+                                print(f"   AFTER faces:  {new_faces}")
+                                print(f"   New Symbol:   {u['symbol']} (Type: {u['type']})")
                     st["moves_left"] -= 1
                     st["moved_units_this_turn"].append(best_act["unitId"])
 
@@ -545,7 +599,23 @@ async def run_ai_turn_if_needed(room_id: str):
             if best_act["action_type"] == "move":
                 for u in st["units"]:
                     if u["id"] == best_act["unitId"]:
+                        dx = best_act["x"] - u["x"]
+                        dy = best_act["y"] - u["y"]
                         u["x"], u["y"] = best_act["x"], best_act["y"]
+                        if u["type"].lower() != "cavalry":
+                            faces = u.get("faces", {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I", "right": "A"})
+                            new_faces = rotate_cube_faces(faces, dx, dy)
+                            u["faces"] = new_faces
+                            top_sym = new_faces["top"]
+                            u["symbol"] = top_sym
+                            if top_sym == "I":
+                                u["type"] = "infantry"
+                            elif top_sym == "A":
+                                u["type"] = "artillery"
+                            elif top_sym == "C":
+                                u["type"] = "cavalry"
+                            elif top_sym == "R":
+                                u["type"] = "relay"
                 st["moves_left"] -= 1
                 st["moved_units_this_turn"].append(best_act["unitId"])
 
@@ -688,6 +758,51 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 await websocket.send_json({"type": "error", "message": "The battle is over. Restart to play again."})
                 continue
 
+            # --- Lazarus Pit Block ---
+            if action != "restart" and st.get("awaiting_lazarus_choice") and action != "choose_lazarus_face":
+                await websocket.send_json({"type": "error", "message": "Must resolve Lazarus Pit choice first."})
+                continue
+
+            if action == "choose_lazarus_face":
+                pending = st.get("awaiting_lazarus_choice")
+                if not pending or pending["side"] != conn_entry["side"]:
+                    await websocket.send_json({"type": "error", "message": "No pending choice for you."})
+                    continue
+                unit_id = pending["unitId"]
+                symbol = data.get("symbol") # 'I', 'A', 'C', 'R', 'M', or 'S'
+                if symbol not in ("I", "A", "C", "R", "M", "S"):
+                    await websocket.send_json({"type": "error", "message": "Invalid symbol choice."})
+                    continue
+                
+                for u in st["units"]:
+                    if u["id"] == unit_id:
+                        faces = u.get("faces", {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"})
+                        found_face = None
+                        for k, v in faces.items():
+                            if v == symbol:
+                                found_face = k
+                                break
+                        if found_face:
+                            old_top = faces["top"]
+                            faces["top"] = symbol
+                            faces[found_face] = old_top
+                        
+                        u["faces"] = faces
+                        u["symbol"] = symbol
+                        if symbol == "I": u["type"] = "infantry"
+                        elif symbol == "A": u["type"] = "artillery"
+                        elif symbol == "C": u["type"] = "cavalry"
+                        elif symbol == "R": u["type"] = "relay"
+                        elif symbol == "M": u["type"] = "mine"
+                        elif symbol == "S": u["type"] = "shield"
+                        
+                        print(f"🌟 [LAZARUS CHOICE] Unit {unit_id} reshaped to {symbol}. New faces: {faces}")
+                        break
+                
+                st["awaiting_lazarus_choice"] = None
+                await broadcast_room_state(room_id)
+                continue
+
             if action == "move":
                 if st["moves_left"] <= 0:
                     await websocket.send_json({"type": "error", "message": "No moves remaining."})
@@ -700,9 +815,67 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 if is_valid:
                     save_state_to_history(room_id)  # Log history frame
                     print(f"[MOVE] Success: ID={unit_id} to ({tx},{ty}) in room={room_id}. History size now: {len(room['history'])}")
+                    # Pre-move checks for mine creator spawning
+                    u_prev_x = None
+                    u_prev_y = None
+                    u_symbol_before = None
+                    u_side_before = None
+                    
                     for u in st["units"]:
                         if u["id"] == unit_id:
+                            u_prev_x = u["x"]
+                            u_prev_y = u["y"]
+                            u_symbol_before = u["symbol"]
+                            u_side_before = u["side"]
+                            dx = tx - u["x"]
+                            dy = ty - u["y"]
                             u["x"], u["y"] = tx, ty
+                            if u["type"].lower() != "cavalry":
+                                faces = u.get("faces", {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"})
+                                new_faces = rotate_cube_faces(faces, dx, dy)
+                                u["faces"] = new_faces
+                                top_sym = new_faces["top"]
+                                u["symbol"] = top_sym
+                                if top_sym == "I":
+                                    u["type"] = "infantry"
+                                elif top_sym == "A":
+                                    u["type"] = "artillery"
+                                elif top_sym == "C":
+                                    u["type"] = "cavalry"
+                                elif top_sym == "R":
+                                    u["type"] = "relay"
+                                elif top_sym == "M":
+                                    u["type"] = "mine"
+                                elif top_sym == "S":
+                                    u["type"] = "shield"
+                                print(f"🎲 [ROTATION LOG] Unit ID={unit_id} moved dx={dx}, dy={dy}")
+                                print(f"   BEFORE faces: {faces}")
+                                print(f"   AFTER faces:  {new_faces}")
+                                print(f"   New Symbol:   {u['symbol']} (Type: {u['type']})")
+                            break
+                    
+                    # 1. Mine Spawning: If symbol before was M, spawn mine at u_prev_x, u_prev_y
+                    if u_symbol_before == "M" and u_prev_x is not None:
+                        st["mines"].append({"x": u_prev_x, "y": u_prev_y, "side": u_side_before})
+                        print(f"💣 [MINE SPAWNED] at ({u_prev_x}, {u_prev_y}) by side={u_side_before}")
+                    
+                    # 2. Mine Detonation: If landed on a cell containing a mine, detonate!
+                    mine_triggered = None
+                    for mine in st["mines"]:
+                        if mine["x"] == tx and mine["y"] == ty:
+                            mine_triggered = mine
+                            break
+                    if mine_triggered:
+                        st["mines"].remove(mine_triggered)
+                        st["units"] = [unit for unit in st["units"] if unit["id"] != unit_id]
+                        print(f"💥 [MINE DETONATED] at ({tx}, {ty}). Unit {unit_id} vaporized!")
+                    
+                    # 3. Lazarus Pit check: If unit is still alive and landed on a Lazarus Pit, trigger choice
+                    unit_still_alive = any(unit["id"] == unit_id for unit in st["units"])
+                    if unit_still_alive and (tx, ty) in room.get("lazarus_pits", set()):
+                        st["awaiting_lazarus_choice"] = {"unitId": unit_id, "side": u_side_before}
+                        print(f"🌟 [LAZARUS PIT TRIGGERED] Unit {unit_id} landed at ({tx}, {ty}). Awaiting choice from {u_side_before}")
+                    
                     st["moves_left"] -= 1
                     st["moved_units_this_turn"].append(unit_id)
                     await broadcast_room_state(room_id)
@@ -716,6 +889,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     continue
 
                 tx, ty = data.get("x"), data.get("y")
+
+                # Block attacking shielded units
+                target_unit = next((u for u in st["units"] if u["x"] == tx and u["y"] == ty), None)
+                if target_unit and target_unit.get("symbol") == "S":
+                    await websocket.send_json({"type": "error", "message": "Target unit is shielded and immune to attacks."})
+                    continue
+
                 combat = engine.calculate_combat(st["units"], st["turn"], tx, ty)
 
                 if combat.get("valid"):
@@ -762,16 +942,19 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     "South": {(5, 9)}
                 }
                 room["fortresses"] = {(4, 0), (5, 9)}
+                room["lazarus_pits"] = {(2, 4), (7, 5)}
                 room["state"] = {
+                    "mines": [],
+                    "awaiting_lazarus_choice": None,
                     "units": [
-                        {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0},
-                        {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1},
-                        {"id": "n-inf-1", "type": "infantry", "symbol": "I", "side": "North", "x": 3, "y": 2},
-                        {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2},
-                        {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9},
-                        {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8},
-                        {"id": "s-inf-1", "type": "infantry", "symbol": "I", "side": "South", "x": 6, "y": 7},
-                        {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7}
+                        {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+                        {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+                        {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+                        {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
+                        {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+                        {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+                        {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+                        {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
                     ],
                     "turn": "North",
                     "moves_left": 5,
