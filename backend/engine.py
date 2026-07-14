@@ -33,7 +33,9 @@ class GameEngine:
             "infantry": {"speed": 1, "range": 2, "offense": 4, "defense": 6},
             "cavalry": {"speed": 2, "range": 2, "offense": 5, "defense": 5, "charge": 7},
             "artillery": {"speed": 1, "range": 3, "offense": 5, "defense": 8},
-            "relay": {"speed": 1, "range": 0, "offense": 0, "defense": 1}
+            "relay": {"speed": 1, "range": 0, "offense": 0, "defense": 1},
+            "mine": {"speed": 1, "range": 0, "offense": 0, "defense": 1},
+            "shield": {"speed": 1, "range": 0, "offense": 0, "defense": 8}
         }
 
     def get_stats(self, unit_type: str) -> dict:
@@ -41,6 +43,8 @@ class GameEngine:
         if "infantry" in u_type: return self.unit_stats["infantry"]
         if "cavalry" in u_type: return self.unit_stats["cavalry"]
         if "artillery" in u_type: return self.unit_stats["artillery"]
+        if "mine" in u_type: return self.unit_stats["mine"]
+        if "shield" in u_type: return self.unit_stats["shield"]
         return self.unit_stats["relay"]
 
     def compute_lines_of_communication(self, units: List[Dict], side: str) -> Set[Tuple[int, int]]:
@@ -242,6 +246,10 @@ class GameEngine:
         if not target_unit or target_unit['side'] == attacker_side:
             return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
 
+        # Shield units are immune to all attacks
+        if target_unit.get("symbol") == "S":
+            return {"valid": False, "reason": "Target unit is shielded and immune to attacks."}
+
         total_offense = 0
         contributing_units = set()
 
@@ -301,6 +309,8 @@ class GameEngine:
         has_connected_attacker = False
         for u_id in contributing_units:
             u = next(unit for unit in units if unit['id'] == u_id)
+            if u.get('symbol') == "S":
+                continue  # Shield units cannot attack
             if u['id'] not in connected_attackers:
                 continue
             has_connected_attacker = True
