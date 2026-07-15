@@ -13,6 +13,7 @@ var selected_unit_id: String     = ""
 var unit_tokens:      Dictionary = {}   # uid → UnitToken3D
 var last_combat_seen: Dictionary = {}   # track to avoid re-triggering
 var mine_markers:     Dictionary = {}   # "x_y" → MeshInstance3D
+var engine_pid: int = -1
 
 const COLS: int = 10
 const ROWS: int = 10
@@ -44,7 +45,58 @@ var mat_arsenal:  StandardMaterial3D
 var mat_fortress: StandardMaterial3D
 var mat_mine:     StandardMaterial3D
 
+#func _ready() -> void:
+	#_build_materials()
+	#_build_board()
+	#_position_camera()
+	#_build_hud()
+#
+	#NetworkManager.connected_to_server.connect(_on_connected)
+	#NetworkManager.disconnected_from_server.connect(_on_disconnected)
+	#NetworkManager.state_updated.connect(_on_state_updated)
+	#NetworkManager.error_received.connect(_on_error_received)
+	#NetworkManager.room_id     = "skirmish_room"
+	#NetworkManager.player_name = "GodotCommander"
+	#NetworkManager.player_side = "North"
+	#NetworkManager.vs_ai       = true
+	#NetworkManager.connect_to_room()
+	#status_lbl.text = "Connecting…"
+#
+	#var env: Environment = $WorldEnvironment.environment
+	#env.ambient_light_source = Environment.AMBIENT_SOURCE_BG
+	#env.ambient_light_energy = 0.25 # Dim ambient light down so directional shadows pop
+#
+	## Enable Screen Space Ambient Occlusion (Brings out structural edges and cracks)
+	#env.ssao_enabled = true
+	#env.ssao_radius = 0.5
+	#env.ssao_intensity = 2.0
+#
+	## Enable Glow for the glowing UI overlays and action states
+	#env.glow_enabled = true
+	#env.glow_normalized = true
+	#env.glow_intensity = 0.4
+	#env.glow_bloom = 0.15
+	
+	
 func _ready() -> void:
+	# ── AUTOMATICALLY SPAWN PYTHON BACKEND ENGINE MODULE ──
+	# Toggles extension matching your active runtime system export target
+	var engine_filename = "server.exe" if OS.has_feature("windows") else "server"
+	var engine_path: String = OS.get_executable_path().get_base_dir().path_join(engine_filename)
+	
+	if FileAccess.file_exists(engine_path):
+		# Spawns the compiled server quietly without flashing a visual command terminal
+		engine_pid = OS.create_process(engine_path, [])
+		print("Python background engine started with PID: ", engine_pid)
+	else:
+		# If running in the editor directly, look locally inside your backend workspace folder
+		var local_debug_path = OS.get_executable_path().get_base_dir().path_join("../../backend/dist").path_join(engine_filename)
+		if FileAccess.file_exists(local_debug_path):
+			engine_pid = OS.create_process(local_debug_path, [])
+		else:
+			push_warning("Background engine binary not spotted next to executable. Ensure it is copied over before sharing.")
+
+	# ── Existing Ready Logic Continuations ──
 	_build_materials()
 	_build_board()
 	_position_camera()
@@ -61,20 +113,46 @@ func _ready() -> void:
 	NetworkManager.connect_to_room()
 	status_lbl.text = "Connecting…"
 
+	var env: Environment = $WorldEnvironment.environment
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_BG
+	env.ambient_light_energy = 0.25 
+
+	env.ssao_enabled = true
+	env.ssao_radius = 0.5
+	env.ssao_intensity = 2.0
+
+	env.glow_enabled = true
+	env.glow_normalized = true
+	env.glow_intensity = 0.4
+	env.glow_bloom = 0.15	
+
 # ────────────────────────────────────────────────────────────────────────────
 # Materials
 # ────────────────────────────────────────────────────────────────────────────
+# Refactored material constructor inside Game.gd
 func _make_mat(color: Color, alpha: float = 1.0, emit: Color = Color.BLACK, emit_e: float = 0.0) -> StandardMaterial3D:
 	var m = StandardMaterial3D.new()
 	m.albedo_color = Color(color.r, color.g, color.b, alpha)
 	if alpha < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.roughness = 0.8
+	
+	# --- Stone Look Tweaks ---
+	m.roughness = 0.85            # Rough slate/granite surface texture
+	m.metallic = 0.1              # Minor natural mineral shine
+	m.specular = 0.3              # Subdued reflection highlights
+	
+	# If you export a stone texture set from Material Maker, load it like this:
+	# m.albedo_texture = preload("res://assets/textures/stone_albedo.png")
+	# m.normal_enabled = true
+	# m.normal_texture = preload("res://assets/textures/stone_normal.png")
+	
 	if emit != Color.BLACK:
 		m.emission_enabled = true
 		m.emission = emit
 		m.emission_energy_multiplier = emit_e
 	return m
+
+
 
 func _build_materials() -> void:
 	mat_tile     = _make_mat(Color(0.17, 0.23, 0.21))
@@ -246,7 +324,9 @@ func _position_camera(anim: bool = false) -> void:
 	else:
 		camera.position = tgt
 		camera.look_at(BOARD_CTR, Vector3.UP)
-	camera.size = cam_zoom
+	
+	# PERSPECTIVE FIX: Set fov instead of size
+	camera.fov = cam_zoom
 
 func _start_cam_rotate(delta_deg: float) -> void:
 	cam_yaw_from   = cam_yaw
@@ -262,8 +342,19 @@ func _process(delta: float) -> void:
 		camera.look_at(BOARD_CTR, Vector3.UP)
 	# Keep face labels always oriented toward camera
 	for uid in unit_tokens:
-		unit_tokens[uid].update_facing(camera.global_position)
-
+		if is_instance_valid(unit_tokens[uid]):
+			unit_tokens[uid].update_facing(camera.global_position)
+			
+			
+func _notification(what: int) -> void:
+	# Listens for system windows close instructions
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if engine_pid != -1:
+			OS.kill(engine_pid)
+			print("Python backend process killed safely.")
+		
+		# Allow Godot to exit the program tree cleanly
+		get_tree().quit()
 
 # ────────────────────────────────────────────────────────────────────────────
 # Input
@@ -276,9 +367,11 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			cam_zoom = max(6.0, cam_zoom - 2.0); camera.size = cam_zoom
+			cam_zoom = max(20.0, cam_zoom - 2.0)
+			camera.fov = cam_zoom
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			cam_zoom = min(32.0, cam_zoom + 2.0); camera.size = cam_zoom
+			cam_zoom = min(60.0, cam_zoom + 2.0)
+			camera.fov = cam_zoom
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			# First check unit tokens via raycasting 3D
 			var space = get_world_3d().direct_space_state
