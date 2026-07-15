@@ -19,6 +19,7 @@ var top_mat:    StandardMaterial3D
 const CUBE_SIZE: float = 0.74
 
 var face_labels: Dictionary = {}
+var shield_node: MeshInstance3D = null
 
 const FACE_NORMALS = {
 	"top":   Vector3( 0,  1,  0),
@@ -73,8 +74,89 @@ func _build_nodes() -> void:
 	body.add_child(col)
 	add_child(body)
 
+	# ── Face Labels (Restored position inside build workflow) ──
+	var face_cfg = {
+		"top":   [Vector3(0, CUBE_SIZE * 0.5 + 0.015,  0),   Vector3(-90, 0, 0)],
+		"front": [Vector3(0, 0,  CUBE_SIZE * 0.5 + 0.005),   Vector3(  0, 0, 0)],
+		"back":  [Vector3(0, 0, -(CUBE_SIZE * 0.5 + 0.005)),  Vector3(  0, 180, 0)],
+		"right": [Vector3( CUBE_SIZE * 0.5 + 0.005, 0, 0),   Vector3(  0,  90, 0)],
+		"left":  [Vector3(-(CUBE_SIZE * 0.5 + 0.005), 0, 0), Vector3(  0, -90, 0)],
+	}
+	for key in face_cfg:
+		var cfg = face_cfg[key]
 		
+		if key == "top":
+			var mesh_inst = MeshInstance3D.new()
+			var geo_text_mesh = TextMesh.new()
+			geo_text_mesh.font_size = 200
+			geo_text_mesh.pixel_size = 0.004
+			geo_text_mesh.depth = 0.001
+			geo_text_mesh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			geo_text_mesh.vertical_alignment = VERTICAL_ALIGNMENT_CENTER 
+			mesh_inst.mesh = geo_text_mesh
+	
+			var txt_mat = StandardMaterial3D.new()
+			txt_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+			txt_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mesh_inst.material_override = txt_mat
+	
+			mesh_inst.position = cfg[0]
+			mesh_inst.rotation_degrees = cfg[1]
+			cube_mesh.add_child(mesh_inst)
+			face_labels[key] = mesh_inst
+		else:
+			var lbl = Label3D.new()
+			lbl.font_size = 84
+			lbl.pixel_size = 0.0055
+			lbl.outline_size = 0  
+			lbl.double_sided = false
+			lbl.no_depth_test = false
+			lbl.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			lbl.texture_filter = StandardMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+			lbl.shaded = false
+			
+			lbl.position = cfg[0]
+			lbl.rotation_degrees = cfg[1]
+			cube_mesh.add_child(lbl)
+			face_labels[key] = lbl
+			
+	_refresh_label_colors()
+	
+	# Restores correct vector height baseline so block isn't sunken into the field matrix
+	position.y = CUBE_SIZE * 0.5
+
+
+func set_shielded(is_shielded: bool) -> void:
+	if is_shielded and shield_node == null:
+		# Create the exoskeleton shell
+		shield_node = MeshInstance3D.new()
+		var box = BoxMesh.new()
+		box.size = Vector3(1.15, 1.15, 1.15) # Slightly larger than the unit
+		shield_node.mesh = box
 		
+		# Force Field Material
+		var mat = StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(0.2, 0.6, 1.0, 0.3) # Semi-transparent blue
+		mat.emission_enabled = true
+		mat.emission = Color(0.0, 0.5, 1.0)
+		mat.emission_energy_multiplier = 2.0
+		# Makes the edges glow brighter
+		mat.proximity_fade_enabled = true 
+		
+		shield_node.material_override = mat
+		add_child(shield_node)
+		
+		# Pulse animation
+		var tw = create_tween().set_loops()
+		tw.tween_property(shield_node, "scale", Vector3(1.05, 1.05, 1.05), 1.0)
+		tw.tween_property(shield_node, "scale", Vector3(1.0, 1.0, 1.0), 1.0)
+		
+	elif not is_shielded and shield_node != null:
+		shield_node.queue_free()
+		shield_node = null
+		
+				
 	# ── Face Labels (Top uses geometric TextMesh for isolated neon glow; sides use standard text) ──
 	var face_cfg = {
 		"top":   [Vector3(0, CUBE_SIZE * 0.5 + 0.015,  0),   Vector3(-90, 0, 0)],
@@ -159,12 +241,27 @@ func _refresh_label_colors() -> void:
 
 
 		
+#func update_facing(cam_world_pos: Vector3) -> void:
+	#var to_cam = (cam_world_pos - global_position).normalized()
+	#for key in face_labels:
+		#var dot = FACE_NORMALS[key].dot(to_cam)
+		#var node = face_labels[key] as Node3D # Generic cast allows both types
+		#if not node: continue
+		#
+		## Simulates a natural horizon falloff view check
+		#node.visible = (dot > 0.05)
+		
 func update_facing(cam_world_pos: Vector3) -> void:
 	var to_cam = (cam_world_pos - global_position).normalized()
 	for key in face_labels:
-		var dot = FACE_NORMALS[key].dot(to_cam)
 		var node = face_labels[key] as Node3D # Generic cast allows both types
 		if not node: continue
+		
+		# Transform the static local normal into global space using the block's current 3D basis
+		var local_normal = FACE_NORMALS[key]
+		var global_normal = global_transform.basis * local_normal
+		
+		var dot = global_normal.dot(to_cam)
 		
 		# Simulates a natural horizon falloff view check
 		node.visible = (dot > 0.05)
@@ -349,34 +446,61 @@ func _animate_move(target: Vector3) -> void:
 	var lift_target_rot = roll_axis * 42.0
 	var mid_pos = position + (dir * (CUBE_SIZE * 0.35)) + Vector3(0, CUBE_SIZE * 0.22, 0)
 	
+	#var tw_lift = create_tween().set_parallel(true)
+	#tw_lift.tween_property(self, "position", mid_pos, 0.24)\
+		#.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	#tw_lift.tween_property(cube_mesh, "rotation_degrees", lift_target_rot, 0.24)\
+		#.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	#await tw_lift.finished
+	
 	var tw_lift = create_tween().set_parallel(true)
 	tw_lift.tween_property(self, "position", mid_pos, 0.24)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	tw_lift.tween_property(cube_mesh, "rotation_degrees", lift_target_rot, 0.24)\
+	tw_lift.tween_property(self, "rotation_degrees", lift_target_rot, 0.24)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	await tw_lift.finished
 	
-	# 3. THE SNAP SNAP DROP & SETTLE (Rapid drop over center of mass with a subtle bounce settle)
+	## 3. THE SNAP SNAP DROP & SETTLE (Rapid drop over center of mass with a subtle bounce settle)
+	#var final_rot = roll_axis * 90.0
+	#var tw_drop = create_tween().set_parallel(true)
+	#tw_drop.tween_property(self, "position", target, 0.14)\
+		#.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	#tw_drop.tween_property(cube_mesh, "rotation_degrees", final_rot, 0.14)\
+		#.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	#await tw_drop.finished
+	#
+	## 1. Firmly set the root token node to the target grid destination
+	#position = target
+	#
+	## 2. CRUCIAL STEP: Wipe the mesh rotation immediately so its local axes line up with the world.
+	## Because it matches global orientation instantly, faces won't mismatch or visually glitch.
+	#cube_mesh.rotation_degrees = Vector3.ZERO
+	
 	var final_rot = roll_axis * 90.0
 	var tw_drop = create_tween().set_parallel(true)
 	tw_drop.tween_property(self, "position", target, 0.14)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw_drop.tween_property(cube_mesh, "rotation_degrees", final_rot, 0.14)\
+	tw_drop.tween_property(self, "rotation_degrees", final_rot, 0.14)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	await tw_drop.finished
 	
-	# 1. Firmly set the root token node to the target grid destination
 	position = target
-	
-	# 2. CRUCIAL STEP: Wipe the mesh rotation immediately so its local axes line up with the world.
-	# Because it matches global orientation instantly, faces won't mismatch or visually glitch.
-	cube_mesh.rotation_degrees = Vector3.ZERO
+	self.rotation_degrees = Vector3.ZERO # Resets the global rotation track matrix cleanly
 	
 	# 3. Apply the backend data mapping to the newly oriented faces
 	_apply_pending_faces()
 
+#func _apply_pending_faces() -> void:
+	#if not _pending_faces.is_empty():
+		#faces = _pending_faces
+		#_pending_faces = {}
+		#_update_labels()
+		
 func _apply_pending_faces() -> void:
 	if not _pending_faces.is_empty():
+		print("--- DEBUG MOVE END ---")
+		print("Old Faces Matrix: ", faces)
+		print("Incoming Server Faces Matrix: ", _pending_faces)
 		faces = _pending_faces
 		_pending_faces = {}
 		_update_labels()

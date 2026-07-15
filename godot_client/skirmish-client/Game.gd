@@ -405,33 +405,83 @@ func _screen_to_grid(screen_pos: Vector2) -> Vector2i:
 		return Vector2i(gx, gy)
 	return Vector2i(-1, -1)
 
+#func _handle_unit_click(token: Node3D) -> void:
+	#var uid = token.unit_id
+	#var u   = _find_unit(uid)
+	#if not u: return
+	#if u.get("side") == NetworkManager.player_side:
+		#selected_unit_id = uid
+		#_refresh_overlays()
+	#else:
+		#if selected_unit_id != "":
+			#NetworkManager.send_action({"action": "attack", "x": u.get("x"), "y": u.get("y")})
+			#_deselect()
 func _handle_unit_click(token: Node3D) -> void:
+	# GUARD: Prevent clicking or selecting deactivated/stranded blocks entirely
+	if token is UnitToken3D and token.stranded:
+		return
+
 	var uid = token.unit_id
 	var u   = _find_unit(uid)
 	if not u: return
+	
+	# If the clicked unit is on the player's side, select it
 	if u.get("side") == NetworkManager.player_side:
 		selected_unit_id = uid
 		_refresh_overlays()
+	# If it's an enemy unit, try to attack it with the currently selected unit
 	else:
 		if selected_unit_id != "":
 			NetworkManager.send_action({"action": "attack", "x": u.get("x"), "y": u.get("y")})
 			_deselect()
-
+			
+			
+#
+#func _handle_tile_click(cell: Vector2i) -> void:
+	## Is there a unit on this tile?
+	#var ux = -1; var uy = -1
+	#for u in current_state.get("units", []):
+		#if u.get("x") == cell.x and u.get("y") == cell.y:
+			#ux = u.get("x"); uy = u.get("y")
+			#if u.get("side") == NetworkManager.player_side:
+				#selected_unit_id = u.get("id")
+				#_refresh_overlays()
+				#return
+			#else:
+				#if selected_unit_id != "":
+					#NetworkManager.send_action({"action": "attack", "x": cell.x, "y": cell.y})
+					#_deselect()
+				#return
+	## Empty tile — move
+	#if selected_unit_id != "":
+		#NetworkManager.send_action({"action": "move", "unitId": selected_unit_id, "x": cell.x, "y": cell.y})
+		#_deselect()
+		
+		
 func _handle_tile_click(cell: Vector2i) -> void:
 	# Is there a unit on this tile?
 	var ux = -1; var uy = -1
 	for u in current_state.get("units", []):
 		if u.get("x") == cell.x and u.get("y") == cell.y:
 			ux = u.get("x"); uy = u.get("y")
+			
+			# Player's own unit
 			if u.get("side") == NetworkManager.player_side:
-				selected_unit_id = u.get("id")
+				var uid = u.get("id")
+				# GUARD: Do not select this unit if its physical token is marked as stranded
+				if unit_tokens.has(uid) and unit_tokens[uid].stranded:
+					return
+					
+				selected_unit_id = uid
 				_refresh_overlays()
 				return
+			# Enemy unit
 			else:
 				if selected_unit_id != "":
 					NetworkManager.send_action({"action": "attack", "x": cell.x, "y": cell.y})
 					_deselect()
 				return
+				
 	# Empty tile — move
 	if selected_unit_id != "":
 		NetworkManager.send_action({"action": "move", "unitId": selected_unit_id, "x": cell.x, "y": cell.y})
@@ -449,10 +499,38 @@ func _find_unit(uid: String) -> Dictionary:
 # ────────────────────────────────────────────────────────────────────────────
 # State update
 # ────────────────────────────────────────────────────────────────────────────
+#func _on_state_updated(state_data: Dictionary) -> void:
+	#current_state = state_data
+	#_sync_units(state_data)
+	#_sync_mines(state_data)
+	#_update_hud(state_data)
+	#_refresh_overlays()
+	#_play_combat_anim(state_data)
+	#_check_winner(state_data)
+	
+	
+	
 func _on_state_updated(state_data: Dictionary) -> void:
 	current_state = state_data
-	_sync_units(state_data)
+	
+	# 1. Find which mines exploded in this turn before updating anything
+	var exploded_mines: Array[Vector2i] = []
+	var current_mine_keys: Array = []
+	for mine in state_data.get("mines", []):
+		current_mine_keys.append("%d_%d" % [mine.get("x", 0), mine.get("y", 0)])
+	
+	for key in mine_markers.keys():
+		if key not in current_mine_keys:
+			var parts = key.split("_")
+			if parts.size() == 2:
+				exploded_mines.append(Vector2i(int(parts[0]), int(parts[1])))
+
+	# 2. Sync units and pass the exploded mines list to handle sequenced deaths
+	_sync_units(state_data, exploded_mines)
+	
+	# 3. Sync visual mine markers on the board
 	_sync_mines(state_data)
+	
 	_update_hud(state_data)
 	_refresh_overlays()
 	_play_combat_anim(state_data)
@@ -479,9 +557,32 @@ func _play_combat_anim(st: Dictionary) -> void:
 			if int(round(tok.position.x)) == tx and int(round(tok.position.z)) == ty:
 				tok.play_hit_shake()
 
-func _sync_units(state_data: Dictionary) -> void:
+#func _sync_units(state_data: Dictionary) -> void:
+	#var seen: Array = []
+	#var connected_ids: Array = state_data.get("connectedUnitIds", [])
+	#for u in state_data.get("units", []):
+		#var uid = u.get("id", "")
+		#seen.append(uid)
+		#if unit_tokens.has(uid):
+			#unit_tokens[uid].update_state(u)
+		#else:
+			#var tok = preload("res://UnitToken3D.gd").new()
+			#units_node.add_child(tok)
+			#tok.setup(u)
+			#unit_tokens[uid] = tok
+		#unit_tokens[uid].set_stranded(uid not in connected_ids)
+	#for uid in unit_tokens.keys():
+		#if uid not in seen:
+			#var tok = unit_tokens[uid]
+			#unit_tokens.erase(uid)
+			#tok.play_death()   # animated death, frees itself
+			
+			
+func _sync_units(state_data: Dictionary, exploded_mines: Array[Vector2i]) -> void:
 	var seen: Array = []
 	var connected_ids: Array = state_data.get("connectedUnitIds", [])
+	
+	# Update surviving units
 	for u in state_data.get("units", []):
 		var uid = u.get("id", "")
 		seen.append(uid)
@@ -493,12 +594,57 @@ func _sync_units(state_data: Dictionary) -> void:
 			tok.setup(u)
 			unit_tokens[uid] = tok
 		unit_tokens[uid].set_stranded(uid not in connected_ids)
+		
+	# Handle dying units with proper animation sequencing
 	for uid in unit_tokens.keys():
 		if uid not in seen:
 			var tok = unit_tokens[uid]
-			unit_tokens.erase(uid)
-			tok.play_death()   # animated death, frees itself
+			unit_tokens.erase(uid) # Remove from active tracking immediately
+			
+			# Check if this unit was the one that stepped on an exploded mine
+			var matched_mine: Vector2i = Vector2i(-1, -1)
+			for mine_pos in exploded_mines:
+				# A unit triggers a mine by stepping directly onto its coordinates
+				# Chebyshev distance check (adjacent/diagonal) or direct check to find the path
+				var dist_x = abs(tok.position.x - mine_pos.x)
+				var dist_z = abs(tok.position.z - mine_pos.y)
+				if dist_x <= 2.0 and dist_z <= 2.0: # Matches movement range
+					matched_mine = mine_pos
+					break
+			
+			if matched_mine != Vector2i(-1, -1):
+				# SEQUENCED MINE DEATH FLOW:
+				_sequence_mine_death(tok, matched_mine)
+			else:
+				# Normal instant death (e.g., destroyed by combat/attacks)
+				tok.play_death()
+				
+func _sequence_mine_death(tok: UnitToken3D, mine_pos: Vector2i) -> void:
+	# 1. Force the unit to run its tumbling/rolling animation to the mine tile
+	await tok._animate_move(Vector3(mine_pos.x, 0.0, mine_pos.y))
+	
+	# 2. Spawn the vertical laser strike directly on the target tile
+	_spawn_laser_beam(mine_pos.x, mine_pos.y)
+	
+	# 3. Play the death dissolution animation inside the beam
+	tok.play_death()
 
+#func _sync_mines(state_data: Dictionary) -> void:
+	#var current_keys: Array = []
+	#for mine in state_data.get("mines", []):
+		#var mx = mine.get("x", 0)
+		#var my = mine.get("y", 0)
+		#var key = "%d_%d" % [mx, my]
+		#current_keys.append(key)
+		#if not mine_markers.has(key):
+			#mine_markers[key] = _spawn_mine_marker(mx, my)
+	## Remove cleared mines
+	#for key in mine_markers.keys():
+		#if key not in current_keys:
+			#mine_markers[key].queue_free()
+			#mine_markers.erase(key)
+			
+			
 func _sync_mines(state_data: Dictionary) -> void:
 	var current_keys: Array = []
 	for mine in state_data.get("mines", []):
@@ -508,11 +654,29 @@ func _sync_mines(state_data: Dictionary) -> void:
 		current_keys.append(key)
 		if not mine_markers.has(key):
 			mine_markers[key] = _spawn_mine_marker(mx, my)
-	# Remove cleared mines
+	
+	# Remove cleared mines and fire the vertical strike laser beam
 	for key in mine_markers.keys():
 		if key not in current_keys:
+			# Parse coordinates to place the strike beam
+			var parts = key.split("_")
+			if parts.size() == 2:
+				var mx = int(parts[0])
+				var my = int(parts[1])
+				_spawn_laser_beam(mx, my) # <-- Run the laser strike!
+			
 			mine_markers[key].queue_free()
 			mine_markers.erase(key)
+
+# Clean, dedicated laser spawner
+func _spawn_laser_beam(x: int, y: int) -> void:
+	var laser_script = preload("res://LaserBeam3D.gd")
+	var laser = Node3D.new()
+	laser.set_script(laser_script)
+	
+	# Position the center of the beam's base flat on the targeted tile
+	laser.position = Vector3(x, 0.0, y)
+	board_node.add_child(laser)
 
 func _spawn_mine_marker(mx: int, my: int) -> Node3D:
 	var root    = Node3D.new()
