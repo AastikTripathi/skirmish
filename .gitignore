@@ -1,0 +1,48 @@
+# ==========================================
+# Python Virtual Environments & Caches
+# ==========================================
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ==========================================
+# Godot Engine (Client)
+# ==========================================
+# Godot's local metadata and import cache
+.godot/
+# Godot exports (if created inside the directory)
+build/
+exports/
+# Shared libraries / binaries generated during compilation (if any)
+*.mono/
+*.translation
+
+# ==========================================
+# Frontend (React / Node)
+# ==========================================
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# OS & Editor Files
+# ==========================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
