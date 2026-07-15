@@ -24,6 +24,10 @@ NetworkManager="*res://NetworkManager.gd"
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[dotnet]
+
+project/assembly_name="skirmish_client"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -33,3 +37,4 @@ window/stretch/aspect="expand"
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+
