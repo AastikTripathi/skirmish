@@ -1,10 +1,60 @@
 [gd_scene format=3 uid="uid://dv3qdllqqycf7"]
 
-[ext_resource type="Script" uid="uid://dr5m34mndy5or" path="res://Game.gd" id="1_80nbo"]
-[ext_resource type="Script" uid="uid://dhvcs1la038gd" path="res://Board.gd" id="2_board"]
+[ext_resource type="Script" uid="uid://dr5m34mndy5or" path="res://Game.gd" id="1_game"]
 
-[node name="Game" type="Node2D" unique_id=779830277]
-script = ExtResource("1_80nbo")
+[sub_resource type="Environment" id="Env_001"]
+background_mode = 1
+background_color = Color(0.1, 0.11, 0.14, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.6, 0.72, 1)
+ambient_light_energy = 0.7
 
-[node name="Board" type="Node2D" parent="." unique_id=1758881647]
-script = ExtResource("2_board")
+[node name="Game" type="Node3D" unique_id=1170655286]
+script = ExtResource("1_game")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=761722339]
+environment = SubResource("Env_001")
+
+[node name="DirectionalLight" type="DirectionalLight3D" parent="." unique_id=1158252098]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 10, 0)
+light_color = Color(1, 0.96, 0.85, 1)
+light_energy = 1.9
+shadow_enabled = true
+
+[node name="FillLight" type="DirectionalLight3D" parent="." unique_id=1269444156]
+transform = Transform3D(-0.866, -0.354, -0.354, 0, 0.707, -0.707, 0.5, -0.612, 0.612, 0, 8, 0)
+light_color = Color(0.38, 0.48, 0.72, 1)
+light_energy = 0.55
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=88481453]
+projection = 1
+size = 18.0
+near = 0.1
+far = 500.0
+
+[node name="Board" type="Node3D" parent="." unique_id=270995654]
+
+[node name="Units" type="Node3D" parent="." unique_id=1259415465]
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=885408903]
+
+[node name="HUD" type="Control" parent="UI" unique_id=1754376915]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="StatusLabel" type="Label" parent="UI" unique_id=1720386061]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -44.0
+offset_right = -12.0
+offset_bottom = -10.0
+text = "Connecting..."
+horizontal_alignment = 1
