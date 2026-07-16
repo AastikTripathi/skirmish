@@ -27,6 +27,10 @@ class WarGameAI:
 
         # --- NEW DIAGNOSTIC SYSTEM PROPERTIES ---
         self.position_history = position_history if position_history is not None else {}
+        
+        # ── INITIALIZE SMT TACTICAL ORACLE CONNECTION ──
+        from smt_oracle import SmtTacticalOracle
+        self.smt_oracle = SmtTacticalOracle(cols=engine.cols, rows=engine.rows)
         self.turn_counter = turn_counter
         self._distance_cache = {}  # {target_y: {(x, y): distance}}
         self.cluster_turn_cursor = 0
@@ -897,6 +901,555 @@ class WarGameAI:
         after = self.engine.get_connected_units(ghost, self.side)
         return len(before - after)
 
+    # def select_best_action(self, current_state: dict, allowed_clusters: set = None) -> dict:
+    #     units = current_state["units"]
+    #     moved_this_turn = current_state["moved_units_this_turn"]
+    #     attack_executed = current_state["attack_executed_this_turn"]
+
+    #     try:
+    #         start_north = set(self.engine.get_connected_units(units, "North"))
+    #         start_south = set(self.engine.get_connected_units(units, "South"))
+    #     except:
+    #         start_north = start_south = set()
+    #     base_enemy_connected = start_north if self.side == "South" else start_south
+    #     base_my_connected = start_south if self.side == "South" else start_north
+
+    #     target_y = 0 if self.side == "South" else 19
+
+    #     # --- UPDATE TEMPORAL TRACKER KEYS (Once per turn) ---
+    #     last_updated = self.position_history.get("_last_updated_turn")
+    #     if last_updated is None or last_updated != self.turn_counter:
+    #         self.position_history["_last_updated_turn"] = self.turn_counter
+    #         for u in units:
+    #             if u.get("side") == self.side:
+    #                 uid = u["id"]
+    #                 if uid not in self.position_history:
+    #                     self.position_history[uid] = []
+    #                 self.position_history[uid].append((u["x"], u["y"]))
+    #                 if len(self.position_history[uid]) > 8:
+    #                     self.position_history[uid].pop(0)
+
+    #     # Run the Global Tactical Orchestrator
+    #     self._orchestrate_tactics(units, base_my_connected, base_enemy_connected)
+    #     # Get dynamic local goals
+    #     local_goals = self._decide_local_goals(units, base_my_connected)
+
+    #     current_my_score = self.evaluate_board(units, base_enemy_connected=base_enemy_connected)
+    #     if self.defensive_weight > 0:
+    #         current_enemy_score = self.enemy_evaluator.evaluate_board(units, base_enemy_connected=base_my_connected)
+    #         baseline_score = current_my_score - self.defensive_weight * current_enemy_score
+    #     else:
+    #         baseline_score = current_my_score
+
+    #     # Initialize best_score to baseline_score minus a tolerance threshold (2000.0).
+    #     # This allows the AI to make progress moves that have minor negative modifiers (e.g. cohesion loss,
+    #     # leaving a defend post), while still preventing suicidal or catastrophic actions.
+    #     best_score = baseline_score - 2000.0
+    #     best_action = {"action_type": "end_turn"}
+
+    #     actions = self.get_all_legal_moves(units, moved_this_turn)
+    #     if not actions:
+    #         return {"action_type": "end_turn"}
+
+    #     # Separate move actions and attack actions
+    #     move_actions = [a for a in actions if a["action_type"] == "move"]
+    #     attack_actions = [a for a in actions if a["action_type"] == "attack"]
+
+    #     # Group move actions by cluster
+    #     unit_to_cluster = self._cluster_own_units(units)
+    #     moves_by_cluster = {}
+    #     for action in move_actions:
+    #         cid = unit_to_cluster.get(action["unitId"], -1)
+    #         if allowed_clusters is None or cid in allowed_clusters:
+    #             moves_by_cluster.setdefault(cid, []).append(action)
+
+    #     cluster_ids = sorted(moves_by_cluster.keys())
+    #     chosen_cluster = None
+    #     if cluster_ids:
+    #         start = self.cluster_turn_cursor % len(cluster_ids)
+    #         ordered_clusters = cluster_ids[start:] + cluster_ids[:start]
+    #         chosen_cluster = ordered_clusters[0]
+    #         candidate_actions = list(moves_by_cluster[chosen_cluster])
+    #         self.cluster_turn_cursor = (self.cluster_turn_cursor + 1) % len(cluster_ids)
+    #     else:
+    #         candidate_actions = []
+
+    #     # Merge ALL attacks globally into the candidate actions pool
+    #     candidate_actions.extend(attack_actions)
+
+    #     if not candidate_actions:
+    #         return {"action_type": "end_turn"}
+
+    #     diagnostic_log = {}
+    #     actions = candidate_actions
+
+    #     ai_units = [u for u in units if u.get("side") == self.side]
+    #     enemy_units = [u for u in units if u.get("side") == self.enemy_side]
+
+    #     for action in actions:
+    #         temp = copy.deepcopy(units)
+    #         mod = 0.0
+    #         act_uid = action.get("unitId")
+
+    #         if act_uid and action["action_type"] == "move":
+    #             # Immediate oscillation check: moving back to any of the last 3 positions is heavily penalized
+    #             history = self.position_history.get(act_uid, [])
+    #             if len(history) >= 2:
+    #                 recent_history = history[-3:]
+    #                 if (action["x"], action["y"]) in recent_history:
+    #                     mod -= 180000.0  # Devastating penalty for immediate loop oscillation
+
+    #             has_stuck_unit = any(self._detect_behavioral_anomaly(u["id"]) is not None for u in ai_units)
+    #             if has_stuck_unit:
+    #                 acting_anomaly = self._detect_behavioral_anomaly(act_uid)
+    #                 if not acting_anomaly:
+    #                     mod += 15000.0
+
+    #         acting_unit = next((u for u in units if u["id"] == act_uid), None)
+    #         if not acting_unit and action["action_type"] != "end_turn":
+    #             continue
+
+    #         # Arsenal defense and cut-off pursuit logic
+    #         if acting_unit and "relay" not in acting_unit.get("type", "").lower():
+    #             our_arsenals = self.engine.arsenals[self.side]
+    #             threatening_enemies = []
+    #             for e in enemy_units:
+    #                 for ax, ay in our_arsenals:
+    #                     if max(abs(e["x"] - ax), abs(e["y"] - ay)) <= 6:
+    #                         threatening_enemies.append(e)
+    #                         break
+
+    #             if threatening_enemies:
+    #                 # Find closest friendly combat units to the threats to partition response
+    #                 combat_units = [u for u in ai_units if "relay" not in u.get("type", "").lower()]
+    #                 defenders_assigned = set()
+    #                 for e in threatening_enemies:
+    #                     if combat_units:
+    #                         closest_u = min(combat_units, key=lambda cu: max(abs(cu["x"] - e["x"]), abs(cu["y"] - e["y"])))
+    #                         defenders_assigned.add(closest_u["id"])
+
+    #                 if acting_unit["id"] in defenders_assigned:
+    #                     if action["action_type"] == "attack":
+    #                         # If the attack is targeting one of these threatening enemies, reward it massively
+    #                         if any(e["x"] == action["x"] and e["y"] == action["y"] for e in threatening_enemies):
+    #                             mod += 150000.0  # Clear Arsenal Threat Kill Order!
+    #                     elif action["action_type"] == "move":
+    #                         try:
+    #                             before_connected = self.engine.get_connected_units(units, self.side)
+    #                             after_connected = self.engine.get_connected_units(temp, self.side)
+    #                             is_self_connected = acting_unit["id"] in after_connected
+    #                             breaks_ally_supply = len(before_connected - after_connected) > 0
+    #                         except:
+    #                             is_self_connected = True
+    #                             breaks_ally_supply = False
+
+    #                         if is_self_connected and not breaks_ally_supply:
+    #                             min_dist_before = min(max(abs(acting_unit["x"] - e["x"]), abs(acting_unit["y"] - e["y"])) for e in threatening_enemies)
+    #                             min_dist_after = min(max(abs(action["x"] - e["x"]), abs(action["y"] - e["y"])) for e in threatening_enemies)
+    #                             if min_dist_after < min_dist_before:
+    #                                 mod += 40000.0  # Reward moving to intercept threat
+    #                             elif min_dist_after > min_dist_before:
+    #                                 mod -= 20000.0  # Penalize moving away from arsenal threat
+
+    #         if action["action_type"] == "attack":
+    #             if attack_executed: continue
+    #             combat = self.engine.calculate_combat(temp, self.side, action["x"], action["y"])
+    #             if combat.get("valid"):
+    #                 # Find if target unit is cut off
+    #                 target_unit = next((u for u in temp if u["x"] == action["x"] and u["y"] == action["y"]), None)
+    #                 is_target_cutoff = False
+    #                 if target_unit:
+    #                     target_connected = target_unit["id"] in self.engine.get_connected_units(temp, self.enemy_side)
+    #                     is_target_cutoff = not target_connected
+    #                 if combat["result"] == "DESTROY":
+    #                     # Shoot to kill: large destroy bonus
+    #                     mod += 15000.0 + combat["net_force"] * 100.0
+    #                     if is_target_cutoff:
+    #                         mod += 80000.0  # Massive priority to eliminate cut-off units!
+    #                     if target_unit and "relay" in target_unit.get("type", "").lower():
+    #                         mod += 150000.0  # Chess Queen priority bonus to destroy enemy Relays!
+    #                     temp = [u for u in temp if not (u["x"] == action["x"] and u["y"] == action["y"])]
+    #                 elif combat["result"] == "RETREAT":
+    #                     mod += 3000.0 + combat["net_force"] * 100.0
+    #                     if is_target_cutoff:
+    #                         mod += 40000.0  # Moderate priority to push cut-off units back!
+    #                     if target_unit and "relay" in target_unit.get("type", "").lower():
+    #                         mod += 75000.0  # Moderate priority to push relays back!
+    #                 else:
+    #                     # Wasting an attack on a failed combat is heavily penalized
+    #                     mod -= 100000.0
+
+    #         elif action["action_type"] == "move":
+    #             # Penalize abandoning a captured enemy arsenal unless another friendly unit is guarding it
+    #             enemy_arsenals = self.engine.arsenals[self.enemy_side]
+    #             was_on_arsenal = acting_unit and (acting_unit["x"], acting_unit["y"]) in enemy_arsenals
+    #             if was_on_arsenal:
+    #                 ax, ay = acting_unit["x"], acting_unit["y"]
+    #                 other_occupant = any(u["id"] != act_uid and u["x"] == ax and u["y"] == ay and u["side"] == self.side for u in units)
+    #                 if not other_occupant and (action["x"], action["y"]) != (ax, ay):
+    #                     mod -= 40000.0  # Massive penalty for leaving an occupied enemy arsenal unprotected!
+
+    #             if (action["x"], action["y"]) in enemy_arsenals:
+    #                 mod += 15000.0  # Huge bonus to capture/occupy an enemy arsenal!
+
+    #             # 1. Simulate mine detonation
+    #             landed_on_mine = any(m["x"] == action["x"] and m["y"] == action["y"] for m in current_state.get("mines", []))
+    #             if landed_on_mine:
+    #                 temp = [unit for unit in temp if unit["id"] != act_uid]
+    #             else:
+    #                 # 2. Simulate standard movement & 3D face rotation
+    #                 for u in temp:
+    #                     if u.get("id") == act_uid:
+    #                         dx = action["x"] - u["x"]
+    #                         dy = action["y"] - u["y"]
+    #                         u["x"], u["y"] = action["x"], action["y"]
+    #                         if u["type"].lower() != "cavalry":
+    #                             from server import rotate_cube_faces
+    #                             faces = u.get("faces", {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"})
+    #                             new_faces = rotate_cube_faces(faces, dx, dy)
+    #                             u["faces"] = new_faces
+    #                             top_sym = new_faces["top"]
+    #                             u["symbol"] = top_sym
+    #                             if top_sym == "I": u["type"] = "infantry"
+    #                             elif top_sym == "A": u["type"] = "artillery"
+    #                             elif top_sym == "C": u["type"] = "cavalry"
+    #                             elif top_sym == "R": u["type"] = "relay"
+    #                             elif top_sym == "M": u["type"] = "mine"
+    #                             elif top_sym == "S": u["type"] = "shield"
+    #                         break
+
+    #                 # 3. Simulate optimal Lazarus Pit choice
+    #                 if (action["x"], action["y"]) in {(2, 4), (7, 5)}:
+    #                     best_lazarus_symbol = "I"
+    #                     best_lazarus_score = -999999.0
+    #                     for test_sym in ("I", "A", "C", "R", "M", "S"):
+    #                         for u in temp:
+    #                             if u["id"] == act_uid:
+    #                                 u["symbol"] = test_sym
+    #                                 if test_sym == "I": u["type"] = "infantry"
+    #                                 elif test_sym == "A": u["type"] = "artillery"
+    #                                 elif test_sym == "C": u["type"] = "cavalry"
+    #                                 elif test_sym == "R": u["type"] = "relay"
+    #                                 elif test_sym == "M": u["type"] = "mine"
+    #                                 elif test_sym == "S": u["type"] = "shield"
+    #                                 break
+    #                         try:
+    #                             test_score = self.evaluate_board(temp, base_enemy_connected=base_enemy_connected)
+    #                         except:
+    #                             test_score = -50000.0
+    #                         if test_score > best_lazarus_score:
+    #                             best_lazarus_score = test_score
+    #                             best_lazarus_symbol = test_sym
+    #                     for u in temp:
+    #                         if u["id"] == act_uid:
+    #                             u["symbol"] = best_lazarus_symbol
+    #                             if best_lazarus_symbol == "I": u["type"] = "infantry"
+    #                             elif best_lazarus_symbol == "A": u["type"] = "artillery"
+    #                             elif best_lazarus_symbol == "C": u["type"] = "cavalry"
+    #                             elif best_lazarus_symbol == "R": u["type"] = "relay"
+    #                             elif best_lazarus_symbol == "M": u["type"] = "mine"
+    #                             elif best_lazarus_symbol == "S": u["type"] = "shield"
+    #                             break
+
+    #             # ── DYNAMIC POTENTIAL RISK ASSESSMENT (FEAR OF CERTAIN DEATH) ──
+    #             try:
+    #                 enemy_potential_threat_power = 0.0
+    #                 for e in enemy_units:
+    #                     # Only connected enemies pose active threats
+    #                     if e["id"] in base_enemy_connected:
+    #                         e_type = e.get("type", "").lower()
+    #                         if "relay" in e_type:
+    #                             continue
+    #                         e_stats = self.get_stats(e_type)
+    #                         e_move = 2 if "cavalry" in e_type else 1
+    #                         e_range = e_stats["range"]
+    #                         # Chebyshev distance check
+    #                         dist_to_dest = max(abs(e["x"] - action["x"]), abs(e["y"] - action["y"]))
+    #                         if dist_to_dest <= e_move + e_range:
+    #                             enemy_potential_threat_power += e_stats["offense"]
+
+    #                 if enemy_potential_threat_power > 0:
+    #                     friendly_potential_support_power = 0.0
+    #                     for a in ai_units:
+    #                         if a["id"] != act_uid and a["id"] in base_my_connected:
+    #                             a_type = a.get("type", "").lower()
+    #                             if "relay" in a_type:
+    #                                 continue
+    #                             a_stats = self.get_stats(a_type)
+    #                             a_move = 2 if "cavalry" in a_type else 1
+    #                             dist_to_dest = max(abs(a["x"] - action["x"]), abs(a["y"] - action["y"]))
+    #                             if dist_to_dest <= a_move + 1:
+    #                                 friendly_potential_support_power += a_stats["offense"]
+
+    #                     acting_stats = self.get_stats(acting_unit.get("type", "").lower())
+    #                     total_friendly_power = friendly_potential_support_power + acting_stats["offense"]
+
+    #                     if friendly_potential_support_power == 0.0:
+    #                         # Charging alone into enemy potential threat reach is suicidal
+    #                         mod -= 50000.0
+
+    #                     if enemy_potential_threat_power > total_friendly_power:
+    #                         # Outnumbered in potential threat reach
+    #                         mod -= (enemy_potential_threat_power - total_friendly_power) * 1200.0
+    #             except:
+    #                 pass
+
+    #             # ── STRATEGIC SUPPLY-LINE INTERCEPTION (NON-LETHAL KILLS) ──
+    #             try:
+    #                 enemy_connected_before_action = self.engine.get_connected_units(units, self.enemy_side)
+    #                 enemy_connected_after_action = self.engine.get_connected_units(temp, self.enemy_side)
+    #                 newly_cut_off = (base_enemy_connected & enemy_connected_before_action) - enemy_connected_after_action
+    #                 if newly_cut_off:
+    #                     cut_off_value = 0.0
+    #                     for target_id in newly_cut_off:
+    #                         target_unit = next((u for u in enemy_units if u["id"] == target_id), None)
+    #                         if target_unit:
+    #                             target_val = self.unit_values.get(target_unit["type"].lower(), 20)
+    #                             cut_off_value += target_val
+    #                     mod += 8000.0 + cut_off_value * 200.0
+    #             except Exception as e:
+    #                 pass
+
+    #             # Cohesion loss penalty (Self/Teammate Disconnection from Supply Line)
+    #             try:
+    #                 before_connected = self.engine.get_connected_units(units, self.side)
+    #                 after_connected = self.engine.get_connected_units(temp, self.side)
+    #                 lost_ids = before_connected - after_connected
+    #                 if lost_ids:
+    #                     cutoff_penalty = 0.0
+    #                     for lost_id in lost_ids:
+    #                         lost_unit = next((u for u in units if u["id"] == lost_id), None)
+    #                         if lost_unit:
+    #                             if "relay" in lost_unit.get("type", "").lower():
+    #                                 cutoff_penalty += 6000.0  # Devastating penalty for cutting off a relay
+    #                             else:
+    #                                 cutoff_penalty += 3500.0  # Heavy penalty for cutting off a combat unit
+    #                     mod -= cutoff_penalty
+    #             except:
+    #                 pass
+
+    #             lost = self.calculate_cohesion_loss(units, act_uid, action["x"], action["y"])
+    #             if lost > 0:
+    #                 base_cohesion_factor = (
+    #                     15.0 if self.macro_state == "ANNIHILATION_HUNT" else
+    #                     (200.0 if len(units) > 10 else 60.0)
+    #                 )
+    #                 if self.macro_state == "ANNIHILATION_HUNT":
+    #                     base_cohesion_factor = 0.0
+
+    #                 history_here = self.position_history.get(act_uid, [])
+    #                 frozen_turns = 0
+    #                 if acting_unit and len(history_here) >= 3:
+    #                     for pos in reversed(history_here[-6:]):
+    #                         if pos == (acting_unit["x"], acting_unit["y"]):
+    #                             frozen_turns += 1
+    #                         else:
+    #                             break
+    #                 stasis_divisor = max(0.1, 1.0 - (frozen_turns // 2) * 0.4)
+    #                 cohesion_factor = base_cohesion_factor * stasis_divisor
+    #                 mod -= (lost * cohesion_factor)
+
+    #             # ── GOAL-SPECIFIC MODIFIERS (FIFA-STYLE INDIVIDUAL INTELLIGENCE) ──
+    #             goal = local_goals.get(act_uid, "STAY")
+    #             mentality = self.orchestration_data.get("mentality", "BALANCED")
+    #             target_coords = self.orchestration_data.get("target_coords", (12, 10))
+
+    #             if acting_unit:
+    #                 u_type = acting_unit.get("type", "").lower()
+                    
+    #                 if u_type == "relay":
+    #                     if goal == "ESCAPE":
+    #                         # Highly threatened relay: run to safety, get next to defenders
+    #                         dist_enemy_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+    #                         dist_enemy_after = min(self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+    #                         mod += (dist_enemy_after - dist_enemy_before) * 300.0
+                            
+    #                         allies_adjacent = sum(1 for a in ai_units if "relay" not in a.get("type", "").lower() and max(abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1)
+    #                         mod += allies_adjacent * 250.0
+    #                     else:
+    #                         try:
+    #                             before_connected = self.engine.get_connected_units(units, self.side)
+    #                             after_connected = self.engine.get_connected_units(temp, self.side)
+    #                             newly_connected = after_connected - before_connected
+    #                             newly_disconnected = before_connected - after_connected
+    #                             for conn_uid in newly_connected:
+    #                                 conn_unit = next((u for u in units if u["id"] == conn_uid), None)
+    #                                 if conn_unit:
+    #                                     if "relay" in conn_unit.get("type", "").lower():
+    #                                         mod += 40000.0  # Huge bonus to reconnect a friendly relay playmaker!
+    #                                     else:
+    #                                         mod += 30000.0  # Big bonus to reconnect combat units
+    #                             mod -= len(newly_disconnected) * 35000.0  # Massive penalty to keep supply lines stable!
+
+    #                             # Relay supply rule constraints
+    #                             was_connected = acting_unit["id"] in before_connected
+    #                             is_connected_now = acting_unit["id"] in after_connected
+    #                             if not was_connected and is_connected_now:
+    #                                 mod += 80000.0  # High priority to reconnect this Relay to the supply network!
+    #                             elif not is_connected_now:
+    #                                 mod -= 100000.0  # Massive penalty for the Relay staying offline or moving out of supply!
+    #                         except:
+    #                             pass
+
+    #                         # Target positioning: stay 2-4 steps behind attackers to act as playmakers/bridges
+    #                         attackers = [u for u in ai_units if self.orchestration_data.get("roles", {}).get(u["id"]) == "ATTACKER"]
+    #                         if attackers:
+    #                             avg_ax = sum(a["x"] for a in attackers) / len(attackers)
+    #                             avg_ay = sum(a["y"] for a in attackers) / len(attackers)
+    #                             dist_to_attackers = self.get_path_distance(action["x"], action["y"], (int(avg_ax), int(avg_ay)))
+    #                             if 2 <= dist_to_attackers <= 3:
+    #                                 mod += 800.0
+    #                             else:
+    #                                 mod += (10 - abs(dist_to_attackers - 2.5)) * 100.0
+
+    #                         # Relay must NEVER commit suicide by moving next to enemy combat units
+    #                         enemy_combat = [e for e in enemy_units if "relay" not in e.get("type", "").lower()]
+    #                         if enemy_combat:
+    #                             min_dist_enemy = min(max(abs(action["x"] - e["x"]), abs(action["y"] - e["y"])) for e in enemy_combat)
+    #                             if min_dist_enemy <= 1:
+    #                                 mod -= 5000.0
+    #                             elif min_dist_enemy <= 3:
+    #                                 mod -= 1000.0
+
+    #                 else:
+    #                     # Combat Units
+    #                     if goal == "RETREAT":
+    #                         dist_enemy_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+    #                         dist_enemy_after = min(self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+    #                         mod += (dist_enemy_after - dist_enemy_before) * 150.0
+
+    #                         allies_adjacent = sum(1 for a in ai_units if max(abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1 and a["id"] != act_uid)
+    #                         mod += allies_adjacent * 100.0
+
+    #                         if (action["x"], action["y"]) in self.engine.fortresses or (action["x"], action["y"]) in self.engine.passes:
+    #                             mod += 400.0
+
+    #                         # Retreat towards home rows
+    #                         mod += (action["y"] - acting_unit["y"] if self.side == "South" else acting_unit["y"] - action["y"]) * 100.0
+
+    #                     elif goal == "ATTACK_RUN":
+    #                         dist_before = self.get_path_distance(acting_unit["x"], acting_unit["y"], target_coords)
+    #                         dist_after = self.get_path_distance(action["x"], action["y"], target_coords)
+    #                         mod += (dist_before - dist_after) * 200.0
+    #                         if (action["x"], action["y"]) in self.engine.fortresses or (action["x"], action["y"]) in self.engine.passes:
+    #                             mod += 300.0
+
+    #                     elif goal == "DEFEND":
+    #                         possessions = list(self.engine.arsenals[self.side]) + [(r["x"], r["y"]) for r in ai_units if "relay" in r.get("type", "").lower()]
+    #                         if possessions:
+    #                             dist_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], p) for p in possessions)
+    #                             dist_after = min(self.get_path_distance(action["x"], action["y"], p) for p in possessions)
+    #                             if dist_after in [1, 2]:
+    #                                 mod += 500.0 # Shield position
+    #                             elif dist_after < dist_before:
+    #                                 mod += 200.0
+    #                             if (action["x"], action["y"]) in self.engine.fortresses:
+    #                                 mod += 300.0
+
+    #                     elif goal == "TRAVEL":
+    #                         travel_target = target_coords if mentality != "DEFENSIVE" else list(self.engine.arsenals[self.side])[0]
+    #                         dist_before = self.get_path_distance(acting_unit["x"], acting_unit["y"], travel_target)
+    #                         dist_after = self.get_path_distance(action["x"], action["y"], travel_target)
+    #                         mod += (dist_before - dist_after) * 150.0
+
+    #                     elif goal == "STAY":
+    #                         dist_moved = max(abs(acting_unit["x"] - action["x"]), abs(acting_unit["y"] - action["y"]))
+    #                         if dist_moved > 0:
+    #                             mod -= 200.0
+
+    #             if acting_unit:
+    #                 dist_moved = max(abs(acting_unit["x"] - action["x"]), abs(acting_unit["y"] - action["y"]))
+    #                 if dist_moved <= 1:
+    #                     mod += 0.0 if self.macro_state in ["ANNIHILATION_HUNT", "DESPERATION_CHOKE"] else 15.0
+
+    #         is_final_state = (action["action_type"] == "end_turn" or current_state.get("moves_left", 5) == 1)
+    #         my_breakdown = self.evaluate_board(temp, return_breakdown=True, base_enemy_connected=base_enemy_connected, is_end_turn=is_final_state)
+
+    #         if my_breakdown["TOTAL"] + mod < best_score - 500.0:
+    #             continue
+
+    #         if self.defensive_weight > 0:
+    #             enemy_score = self.enemy_evaluator.evaluate_board(temp, base_enemy_connected=base_my_connected, is_end_turn=is_final_state)
+    #             score = (my_breakdown["TOTAL"] - self.defensive_weight * enemy_score) + mod
+    #         else:
+    #             score = my_breakdown["TOTAL"] + mod
+
+    #         anomaly_type = self._detect_behavioral_anomaly(act_uid) if act_uid else None
+    #         if anomaly_type:
+    #             if act_uid not in diagnostic_log:
+    #                 diagnostic_log[act_uid] = {"anomaly": anomaly_type, "choices": []}
+    #             diagnostic_log[act_uid]["choices"].append({
+    #                 "action": action,
+    #                 "score": score,
+    #                 "mod_applied": mod,
+    #                 "breakdown": my_breakdown
+    #             })
+
+    #             if anomaly_type == "STASIS_FREEZE":
+    #                 u_temp = next((ut for ut in temp if ut["id"] == act_uid), None)
+    #                 if u_temp and u_temp["x"] == acting_unit["x"] and u_temp["y"] == acting_unit["y"]:
+    #                     score -= 200000.0
+    #             elif anomaly_type in ["2_STEP_OSCILLATION", "3_STEP_OSCILLATION"]:
+    #                 recent_pos = set(self.position_history.get(act_uid, [])[-4:])
+    #                 if action["action_type"] == "move" and (action["x"], action["y"]) in recent_pos:
+    #                     score -= 200000.0
+
+
+
+    #         if score > best_score:
+    #             best_score = score
+    #             best_action = action
+
+    #     for uid, data in diagnostic_log.items():
+    #         ref_unit = next(u for u in units if u["id"] == uid)
+    #         print("\n" + "=" * 80, file=sys.stderr)
+    #         print(f"⚠️ DIAGNOSTIC ALERT: Unit ID {uid} [{ref_unit['type'].upper()}] at ({ref_unit['x']}, {ref_unit['y']}) is in state: {data['anomaly']}", file=sys.stderr)
+    #         print(f"Macro Strategy Context: {self.macro_state}", file=sys.stderr)
+    #         print(f"Historical Positions Tracking Queue: {self.position_history[uid]}", file=sys.stderr)
+    #         print("-" * 80, file=sys.stderr)
+    #         print(f"{'PROPOSED TARGET':<18} | {'FINAL SCORE':<12} | {'ROLE EVAL':<10} | {'COHESION':<10} | {'THREATS':<10} | {'MODIFIER':<10}", file=sys.stderr)
+    #         print("-" * 80, file=sys.stderr)
+
+    #         sorted_choices = sorted(data["choices"], key=lambda c: c["score"], reverse=True)
+    #         for choice in sorted_choices:
+    #             act = choice["action"]
+    #             bd = choice["breakdown"]
+    #             tgt = f"{act['action_type'].upper()} -> ({act['x']}, {act['y']})" if act['action_type'] != 'end_turn' else "END_TURN"
+    #             print(f"{tgt:<18} | {choice['score']:<12.1f} | {bd['Role_Exec']:<10.1f} | {bd['Cohesion']:<10.1f} | {bd['Threat_Def']:<10.1f} | {choice['mod_applied']:<10.1f}", file=sys.stderr)
+
+    #         if len(sorted_choices) >= 2:
+    #             top_choice = sorted_choices[0]
+    #             forward_choices = [c for c in sorted_choices if c['action']['action_type'] == 'move' and abs(c['action']['y'] - target_y) < abs(ref_unit['y'] - target_y)]
+    #             if forward_choices and top_choice != forward_choices[0]:
+    #                 f_choice = forward_choices[0]
+    #                 print("\n💡 ROOT CAUSE ANALYSIS:", file=sys.stderr)
+    #                 role_delta = f_choice['breakdown']['Role_Exec'] - top_choice['breakdown']['Role_Exec']
+    #                 coh_delta = f_choice['breakdown']['Cohesion'] - top_choice['breakdown']['Cohesion']
+    #                 loss_delta = f_choice['mod_applied'] - top_choice['mod_applied']
+
+    #                 print(f"   • Forward movement was rejected in favor of {top_choice['action']['action_type'].upper()}.", file=sys.stderr)
+    #                 if coh_delta < 0:
+    #                     print(f"   • Cohesion Deficit: Moving forward would drop Cohesion score by {abs(coh_delta):.1f} points.", file=sys.stderr)
+    #                 if role_delta < 0:
+    #                     print(f"   • Role Penalty: Moving forward would lose out on {abs(role_delta):.1f} objective value points.", file=sys.stderr)
+    #                 if loss_delta < 0:
+    #                     print(f"   • Structural Loss: Move broke lines, triggering a penalty of {abs(loss_delta):.1f} points.", file=sys.stderr)
+    #         print("=" * 80 + "\n", file=sys.stderr)
+
+    #     # If the best action chosen is unproductive (end_turn), but there are other clusters
+    #     # we haven't evaluated yet, recursively try the next cluster!
+    #     if best_action and best_action["action_type"] == "end_turn" and cluster_ids:
+    #         all_clusters = set(sorted(unit_to_cluster.values()))
+    #         if allowed_clusters is None:
+    #             allowed_clusters = all_clusters
+    #         remaining_clusters = allowed_clusters - {chosen_cluster}
+    #         if remaining_clusters:
+    #             return self.select_best_action(current_state, allowed_clusters=remaining_clusters)
+
+    #     return best_action if best_action else {"action_type": "end_turn"}
+
+
+
     def select_best_action(self, current_state: dict, allowed_clusters: set = None) -> dict:
         units = current_state["units"]
         moved_this_turn = current_state["moved_units_this_turn"]
@@ -929,6 +1482,13 @@ class WarGameAI:
         self._orchestrate_tactics(units, base_my_connected, base_enemy_connected)
         # Get dynamic local goals
         local_goals = self._decide_local_goals(units, base_my_connected)
+
+
+
+        print("🧪 [SMT TEST] Querying Z3 Matrix...")
+        test_faces = {"top": "I", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"}
+        # Force a 3-step roll budget to see if it can find a path to put Shield on top
+        self.smt_oracle.solve_rotation_path(test_faces, 3, "S")
 
         current_my_score = self.evaluate_board(units, base_enemy_connected=base_enemy_connected)
         if self.defensive_weight > 0:
@@ -1005,6 +1565,12 @@ class WarGameAI:
             if not acting_unit and action["action_type"] != "end_turn":
                 continue
 
+            # ── STRATEGIC PROOFING FILTER: SMT SUPPLY LINE ORACLE ORACLE ──
+            if acting_unit and action["action_type"] == "move":
+                is_supply_cut_guaranteed = self.smt_oracle.verify_supply_cut(ai_units, enemy_units, action)
+                if is_supply_cut_guaranteed:
+                    mod -= 500000.0  # Absolute veto: mathematically blocks unsafe structural extensions
+
             # Arsenal defense and cut-off pursuit logic
             if acting_unit and "relay" not in acting_unit.get("type", "").lower():
                 our_arsenals = self.engine.arsenals[self.side]
@@ -1071,9 +1637,9 @@ class WarGameAI:
                             mod += 40000.0  # Moderate priority to push cut-off units back!
                         if target_unit and "relay" in target_unit.get("type", "").lower():
                             mod += 75000.0  # Moderate priority to push relays back!
-                    else:
-                        # Wasting an attack on a failed combat is heavily penalized
-                        mod -= 100000.0
+                else:
+                    # Wasting an attack on a failed combat is heavily penalized
+                    mod -= 100000.0
 
             elif action["action_type"] == "move":
                 # Penalize abandoning a captured enemy arsenal unless another friendly unit is guarding it
@@ -1098,6 +1664,7 @@ class WarGameAI:
                         if u.get("id") == act_uid:
                             dx = action["x"] - u["x"]
                             dy = action["y"] - u["y"]
+                            distance = max(abs(dx), abs(dy))
                             u["x"], u["y"] = action["x"], action["y"]
                             if u["type"].lower() != "cavalry":
                                 from server import rotate_cube_faces
@@ -1112,6 +1679,21 @@ class WarGameAI:
                                 elif top_sym == "R": u["type"] = "relay"
                                 elif top_sym == "M": u["type"] = "mine"
                                 elif top_sym == "S": u["type"] = "shield"
+
+                                # ── SYSTEMIC ROTATION PATH PLANNING OPTIMIZATION LAYER ──
+                                goal = local_goals.get(act_uid, "STAY")
+                                desired_symbol = None
+                                if goal == "ATTACK_RUN":
+                                    desired_symbol = "A"
+                                elif goal in ["RETREAT", "DEFEND"]:
+                                    desired_symbol = "S"
+
+                                if desired_symbol:
+                                    has_rotation_plan = self.smt_oracle.solve_rotation_path(faces, distance, desired_symbol)
+                                    if has_rotation_plan:
+                                        mod += 25000.0  # Reward moving along paths that land perfectly on the optimal tactical face
+                                    else:
+                                        mod -= 5000.0   # Minor penalty if movement path locks out optimal face options
                             break
 
                     # 3. Simulate optimal Lazarus Pit choice
@@ -1389,8 +1971,6 @@ class WarGameAI:
                     recent_pos = set(self.position_history.get(act_uid, [])[-4:])
                     if action["action_type"] == "move" and (action["x"], action["y"]) in recent_pos:
                         score -= 200000.0
-
-
 
             if score > best_score:
                 best_score = score
