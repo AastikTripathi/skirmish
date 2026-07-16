@@ -1,144 +1,178 @@
+
+
+import sys
 from z3 import *
+
 
 class SmtTacticalOracle:
     def __init__(self, cols=10, rows=10):
         self.cols = cols
         self.rows = rows
-        
-        # Symbol definitions mapped to integer codes
-        self.SYM_CODES = {"I": 0, "A": 1, "C": 2, "R": 3, "M": 4, "S": 5}
-        self.CODE_TO_SYM = {v: k for k, v in self.SYM_CODES.items()}
 
-    def get_symbol_code(self, symbol: str) -> int:
-        return self.SYM_CODES.get(symbol, 0)
+        # Flat profile enum mapping
+        self.PROFILE_CODES = {
+            "infantry": 0,
+            "cavalry": 1,
+            "artillery": 2,
+            "relay": 3,
+            "mine": 4,
+            "shield": 5
+        }
 
-    def symbolic_rotate_cube(self, current_top, current_bottom, current_front, current_back, current_left, current_right, dx, dy):
+    def verify_action_safety(self, units: list, side: str, proposed_action: dict) -> bool:
         """
-        Pure mathematical translation of rotate_cube_faces using Z3 conditional execution.
-        Returns symbolic expressions for the next (top, bottom, front, back, left, right).
+        Uses an SMT solver to strictly prove if a proposed move/transform commitment
+        guarantees an immediate, unacceptably high-risk vulnerability.
+        Returns True if the action is mathematically guaranteed to be a trap (Veto Action).
         """
-        # East Roll (dx > 0, dy == 0)
-        east_top    = current_left
-        east_bottom = current_right
-        east_left   = current_bottom
-        east_right  = current_top
-        east_front  = current_front
-        east_back   = current_back
+        if proposed_action.get("action_type") != "move":
+            return False
 
-        # West Roll (dx < 0, dy == 0)
-        west_top    = current_right
-        west_bottom = current_left
-        west_left   = current_top
-        west_right  = current_bottom
-        west_front  = current_front
-        west_back   = current_back
-
-        # South Roll (dx == 0, dy > 0)
-        south_top    = current_back
-        south_bottom = current_front
-        south_front  = current_top
-        south_back   = current_bottom
-        south_left   = current_left
-        south_right  = current_right
-
-        # North Roll (dx == 0, dy < 0)
-        north_top    = current_front
-        north_bottom = current_back
-        north_front  = current_bottom
-        north_back   = current_top
-        north_left   = current_left
-        north_right  = current_right
-
-        # Bind the vectors conditionally depending on symbolic move inputs
-        next_top = If(And(dx > 0, dy == 0), east_top,
-                   If(And(dx < 0, dy == 0), west_top,
-                   If(And(dx == 0, dy > 0), south_top,
-                   If(And(dx == 0, dy < 0), north_top, current_top))))
-
-        next_bottom = If(And(dx > 0, dy == 0), east_bottom,
-                      If(And(dx < 0, dy == 0), west_bottom,
-                      If(And(dx == 0, dy > 0), south_bottom,
-                      If(And(dx == 0, dy < 0), north_bottom, current_bottom))))
-
-        next_front = If(And(dx > 0, dy == 0), east_front,
-                     If(And(dx < 0, dy == 0), west_front,
-                     If(And(dx == 0, dy > 0), south_front,
-                     If(And(dx == 0, dy < 0), north_front, current_front))))
-
-        next_back = If(And(dx > 0, dy == 0), east_back,
-                    If(And(dx < 0, dy == 0), west_back,
-                    If(And(dx == 0, dy > 0), south_back,
-                    If(And(dx == 0, dy < 0), north_back, current_back))))
-
-        next_left = If(And(dx > 0, dy == 0), east_left,
-                    If(And(dx < 0, dy == 0), west_left,
-                    If(And(dx == 0, dy > 0), south_left,
-                    If(And(dx == 0, dy < 0), north_left, current_left))))
-
-        next_right = If(And(dx > 0, dy == 0), east_right,
-                     If(And(dx < 0, dy == 0), west_right,
-                     If(And(dx == 0, dy > 0), south_right,
-                     If(And(dx == 0, dy < 0), north_right, current_right))))
-
-        return next_top, next_bottom, next_front, next_back, next_left, next_right
-
-
-
-    
-
-def solve_rotation_path(self, current_faces: dict, allowed_moves_budget: int, target_top_symbol: str) -> list:
-        """
-        Asks Z3 to find a valid sequence of grid steps (dx, dy) 
-        that puts target_top_symbol on the top face.
-        """
         solver = Solver()
-        
-        # Convert initial face strings to int codes
-        t = self.get_symbol_code(current_faces.get("top", "I"))
-        b = self.get_symbol_code(current_faces.get("bottom", "S"))
-        f = self.get_symbol_code(current_faces.get("front", "C"))
-        bk = self.get_symbol_code(current_faces.get("back", "R"))
-        l = self.get_symbol_code(current_faces.get("left", "M"))
-        r = self.get_symbol_code(current_faces.get("right", "A"))
-        
-        target_code = self.get_symbol_code(target_top_symbol)
+        act_uid = proposed_action["unitId"]
+        target_x = proposed_action["x"]
+        target_y = proposed_action["y"]
+        transform_to = proposed_action.get("transform_to")
 
-        # Create step array variables for the path horizon
-        steps_dx = [Int(f'step_{i}_dx') for i in range(allowed_moves_budget)]
-        steps_dy = [Int(f'step_{i}_dy') for i in range(allowed_moves_budget)]
+        Target_X = Int('target_x')
+        Target_Y = Int('target_y')
+        Target_Profile = Int('target_profile')
 
-        # Restrict movement values to valid single grid steps
-        for i in range(allowed_moves_budget):
-            # Steps must be either 0, 1, or -1
-            solver.add(steps_dx[i] >= -1, steps_dx[i] <= 1)
-            solver.add(steps_dy[i] >= -1, steps_dy[i] <= 1)
-            # Prevent diagonal combined step parsing bugs by forcing orthogonal components per sub-step
-            solver.add(If(steps_dx[i] != 0, steps_dy[i] == 0, True))
-            solver.add(Not(And(steps_dx[i] == 0, steps_dy[i] == 0))) # Must actually move
+        solver.add(Target_X == target_x)
+        solver.add(Target_Y == target_y)
 
-        # Unroll the transition function through the step horizon loop
-        curr_t, curr_b, curr_f, curr_bk, curr_l, curr_r = t, b, f, bk, l, r
-        for i in range(allowed_moves_budget):
-            curr_t, curr_b, curr_f, curr_bk, curr_l, curr_r = self.symbolic_rotate_cube(
-                curr_t, curr_b, curr_f, curr_bk, curr_l, curr_r, 
-                steps_dx[i], steps_dy[i]
-            )
+        current_unit = next((u for u in units if u["id"] == act_uid), None)
+        if not current_unit:
+            return False
 
-        # Assert final target condition to check satisfiability
-        solver.add(curr_t == target_code)
+        final_profile_str = transform_to if transform_to else current_unit["type"].lower()
+        final_profile_code = self.PROFILE_CODES.get(final_profile_str, 0)
+        solver.add(Target_Profile == final_profile_code)
 
-        if solver.check() == sat:
-            m = solver.model()
-            path_plan = []
-            for i in range(allowed_moves_budget):
-                path_plan.append({
-                    "dx": m[steps_dx[i]].as_long(),
-                    "dy": m[steps_dy[i]].as_long()
-                })
-            print(f"🔮 [SMT Oracle] Path found to activate {target_top_symbol}: {path_plan}")
-            return path_plan
-        
-        print(f"❌ [SMT Oracle] Impossible to isolate face {target_top_symbol} within {allowed_moves_budget} steps.")
-        return []
+        # Constraint 1: The Glass-Cannon Cavalry Proximity Check
+        enemy_side = "North" if side == "South" else "South"
+        enemy_units = [u for u in units if u.get("side") == enemy_side]
 
+        for enemy in enemy_units:
+            ex, ey = enemy["x"], enemy["y"]
+            is_adjacent = And(Abs(Target_X - ex) <= 1, Abs(Target_Y - ey) <= 1)
+            is_cavalry = (Target_Profile == 1)
+            solver.add(Not(And(is_cavalry, is_adjacent)))
 
+        # Constraint 2: Border Encroachment Grid Limits
+        solver.add(Target_X >= 0, Target_X < self.cols)
+        solver.add(Target_Y >= 0, Target_Y < self.rows)
+
+        if solver.check() == unsat:
+            print(
+                f"🛑 [SMT Oracle] VETO: Action for Unit {act_uid} to ({target_x}, {target_y}) as [{final_profile_str}] is a high-risk trap.",
+                file=sys.stderr)
+            return True
+        return False
+
+    # ── ADVANCED GENERATIVE METHODS TO LEVERAGE Z3 EXTENSIVELY ──
+
+    def solve_geometric_fork(self, units: list, side: str, act_uid: str, allowed_moves: list) -> dict:
+        """
+        Asks Z3 to find a legal coordinate tile from allowed_moves that sets up a
+        simultaneous multi-target threat (fork) against two distinct enemy units.
+        Returns a target action modifier dictionary if sat, else None.
+        """
+        current_unit = next((u for u in units if u["id"] == act_uid), None)
+        if not current_unit or not allowed_moves:
+            return None
+
+        # Build ranges based on profile mappings
+        u_type = current_unit["type"].lower()
+        u_range = 3 if u_type == "artillery" else 1
+
+        enemy_side = "North" if side == "South" else "South"
+        enemies = [e for e in units if e["side"] == enemy_side and e.get("symbol") != "S"]
+
+        # We need at least 2 targetable units to execute a geometric fork calculation
+        if len(enemies) < 2:
+            return None
+
+        s = Solver()
+        Fork_X = Int('fork_x')
+        Fork_Y = Int('fork_y')
+
+        # Constraint 1: The fork coordinate MUST exist within our pre-calculated legal movement array
+        legal_move_conditions = [And(Fork_X == m["x"], Fork_Y == m["y"]) for m in allowed_moves]
+        s.add(Or(*legal_move_conditions))
+
+        # Constraint 2: Check vector configurations targeting enemy pairs simultaneously
+        fork_scenarios = []
+        for i in range(len(enemies)):
+            for j in range(i + 1, len(enemies)):
+                e1, e2 = enemies[i], enemies[j]
+
+                # Model true directional vector paths (8 cardinal/diagonal lanes)
+                # DX and DY variables measure spatial separation along coordinate lanes
+                dx1, dy1 = e1["x"] - Fork_X, e1["y"] - Fork_Y
+                dx2, dy2 = e2["x"] - Fork_X, e2["y"] - Fork_Y
+
+                # Alignment mapping rules: component values must match or zero out completely
+                aligned_e1 = Or(dx1 == 0, dy1 == 0, Abs(dx1) == Abs(dy1))
+                in_range_e1 = And(Abs(dx1) <= u_range, Abs(dy1) <= u_range)
+
+                aligned_e2 = Or(dx2 == 0, dy2 == 0, Abs(dx2) == Abs(dy2))
+                in_range_e2 = And(Abs(dx2) <= u_range, Abs(dy2) <= u_range)
+
+                # Both separate enemy entities must be threatened concurrently on the target step
+                fork_scenarios.append(And(aligned_e1, in_range_e1, aligned_e2, in_range_e2))
+
+        s.add(Or(*fork_scenarios))
+
+        if s.check() == sat:
+            m = s.model()
+            fx, fy = m[Fork_X].as_long(), m[Fork_Y].as_long()
+            print(f"🔮 [Z3 INTEL] FORK DETECTED! Unit {act_uid} can pressure multiple targets at ({fx}, {fy})",
+                  file=sys.stderr)
+            return {"x": fx, "y": fy, "fork_bonus": 800.0}
+
+        return None
+
+    def calculate_absolute_safe_zones(self, units: list, enemy_side: str) -> list:
+        """
+        Uses mathematical inversion to find all coordinate sectors that are
+        completely immune to active enemy fire paths for high-priority maneuvers.
+        Returns a list of safe (x, y) tuples.
+        """
+        enemies = [e for e in units if e["side"] == enemy_side]
+        active_threat_constraints = []
+
+        s = Solver()
+        Safe_X = Int('safe_x')
+        Safe_Y = Int('safe_y')
+
+        s.add(Safe_X >= 0, Safe_X < self.cols)
+        s.add(Safe_Y >= 0, Safe_Y < self.rows)
+
+        # For every enemy, map their potential ray-cast vectors mathematically into the solver
+        for e in enemies:
+            ex, ey = e["x"], e["y"]
+            e_range = 3 if e["type"].lower() == "artillery" else 1
+
+            # A coordinate is unsafe if it aligns with an enemy's vector fire lane within range
+            dx = Safe_X - ex
+            dy = Safe_Y - ey
+            aligned = Or(dx == 0, dy == 0, Abs(dx) == Abs(dy))
+            in_range = And(Abs(dx) <= e_range, Abs(dy) <= e_range)
+
+            active_threat_constraints.append(And(aligned, in_range))
+
+        # Invert the logic: We assert that the tile is NOT caught in any threat ray-cast paths
+        if active_threat_constraints:
+            s.add(Not(Or(*active_threat_constraints)))
+
+        safe_tiles = []
+        # Leverage Z3 to systematically drain the solution space and pull all verified safe coordinates
+        while s.check() == sat:
+            m = s.model()
+            sx, sy = m[Safe_X].as_long(), m[Safe_Y].as_long()
+            safe_tiles.append((sx, sy))
+            # Block this specific coordinate solution to force Z3 to solve for the remaining layout space
+            s.add(Or(Safe_X != sx, Safe_Y != sy))
+
+        return safe_tiles
