@@ -94,6 +94,33 @@ class GameEngine:
                     ty += dy
         return active_loc_cells
 
+    # def get_connected_units(self, units: List[Dict], side: str) -> Set[str]:
+    #     active_loc = self.compute_lines_of_communication(units, side)
+    #     friendly_units = [u for u in units if u['side'] == side]
+
+    #     connected_ids = set()
+    #     queue = []
+
+    #     for u in friendly_units:
+    #         if (u['x'], u['y']) in active_loc:
+    #             connected_ids.add(u['id'])
+    #             queue.append(u)
+
+    #     position_to_unit = {(u['x'], u['y']): u for u in friendly_units}
+    #     while queue:
+    #         current_unit = queue.pop(0)
+    #         cx, cy = current_unit['x'], current_unit['y']
+    #         for dx, dy in self.directions:
+    #             nx, ny = cx + dx, cy + dy
+    #             if (nx, ny) in position_to_unit:
+    #                 neighbor = position_to_unit[(nx, ny)]
+    #                 if neighbor['id'] not in connected_ids:
+    #                     connected_ids.add(neighbor['id'])
+    #                     queue.append(neighbor)
+    #     return connected_ids
+
+
+
     def get_connected_units(self, units: List[Dict], side: str) -> Set[str]:
         active_loc = self.compute_lines_of_communication(units, side)
         friendly_units = [u for u in units if u['side'] == side]
@@ -118,6 +145,47 @@ class GameEngine:
                         connected_ids.add(neighbor['id'])
                         queue.append(neighbor)
         return connected_ids
+
+    def get_connected_now(self, units: List[Dict], side: str) -> Set[str]:
+        return self.get_connected_units(units, side)
+
+
+
+
+    def get_reachable_tiles(self, units: list, unit_id: str) -> set:
+        unit = next((u for u in units if u["id"] == unit_id), None)
+        if not unit:
+            return set()
+
+        ux, uy = unit["x"], unit["y"]
+        u_type = unit.get("type", "").lower()
+        stats = self.get_stats(u_type)
+        speed = stats.get("speed", 1)
+
+        reachable = {(ux, uy)}
+        queue = [(ux, uy, 0)]
+        occupied = {(u["x"], u["y"]) for u in units if u["id"] != unit_id}
+
+        while queue:
+            cx, cy, dist = queue.pop(0)
+            if dist >= speed:
+                continue
+
+            for dx, dy in self.directions:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < self.cols and 0 <= ny < self.rows:
+                    if (nx, ny) in self.mountains or (nx, ny) in occupied:
+                        continue
+                    if (nx, ny) not in reachable:
+                        reachable.add((nx, ny))
+                        queue.append((nx, ny, dist + 1))
+                        
+        return reachable
+
+
+    
+
+
 
 
     def check_line_of_sight(self, from_x: int, from_y: int, to_x: int, to_y: int, max_range: int,
@@ -210,39 +278,7 @@ class GameEngine:
 
         return True, "Move approved."
 
-    def get_reachable_tiles(self, units: List[Dict], unit_id: str) -> Set[Tuple[int, int]]:
-        moving_unit = next((u for u in units if u['id'] == unit_id), None)
-        if not moving_unit:
-            return set()
-
-        stats = self.get_stats(moving_unit['type'])
-        start_x, start_y = moving_unit['x'], moving_unit['y']
-        other_unit_positions = {(u['x'], u['y']) for u in units if u['id'] != unit_id}
-
-        queue = [(start_x, start_y, 0)]
-        visited = {(start_x, start_y)}
-        reachable = set()
-
-        while queue:
-            cx, cy, dist = queue.pop(0)
-            if (cx, cy) != (start_x, start_y):
-                reachable.add((cx, cy))
-
-            if dist >= stats['speed']:
-                continue
-
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    if dx == 0 and dy == 0:
-                        continue
-                    nx, ny = cx + dx, cy + dy
-                    if 0 <= nx < self.cols and 0 <= ny < self.rows:
-                        if (nx, ny) not in self.mountains and (nx, ny) not in other_unit_positions and (nx,
-                                                                                                        ny) not in visited:
-                            visited.add((nx, ny))
-                            queue.append((nx, ny, dist + 1))
-
-        return reachable
+    
 
     def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
         target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
