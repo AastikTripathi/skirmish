@@ -371,12 +371,36 @@ func set_stranded(is_stranded: bool) -> void:
 		if has_node("InternalStrandLight"):
 			get_node("InternalStrandLight").queue_free()
 
+#func update_state(data: Dictionary, animate: bool = true) -> void:
+	#type   = data.get("type", type)
+	#symbol = data.get("symbol", "I")
+	#var new_faces = data.get("faces", {"top": symbol, "front": "C", "back": "R", "right": "A", "left": "M", "bottom": "S"})
+	#var tx = float(data.get("x", 0))
+	#var tz = float(data.get("y", 0))
+	#var is_moving = (abs(position.x - tx) > 0.01 or abs(position.z - tz) > 0.01)
+#
+	#if animate and is_moving:
+		#_pending_faces = new_faces
+		#_animate_move(Vector3(tx, position.y, tz))
+	#else:
+		#faces = new_faces
+		#_pending_faces = {}
+		#_update_labels()
+		#position.x = tx
+		#position.z = tz
+		
+# ── REPLACE WITH THIS DYNAMIC FACE OVERRIDE MATRIX ──
 func update_state(data: Dictionary, animate: bool = true) -> void:
 	type   = data.get("type", type)
 	symbol = data.get("symbol", "I")
-	var new_faces = data.get("faces", {"top": symbol, "front": "C", "back": "R", "right": "A", "left": "M", "bottom": "S"})
 	var tx = float(data.get("x", 0))
 	var tz = float(data.get("y", 0))
+	
+	# Explicit target face tracking structure checks
+	var new_faces = data.get("faces", {})
+	if new_faces.is_empty():
+		new_faces = {"top": symbol, "front": "C", "back": "R", "right": "A", "left": "M", "bottom": "S"}
+		
 	var is_moving = (abs(position.x - tx) > 0.01 or abs(position.z - tz) > 0.01)
 
 	if animate and is_moving:
@@ -403,91 +427,140 @@ func _update_labels() -> void:
 			
 	_refresh_label_colors()
 
-func _animate_move(target: Vector3) -> void:
-	if type == "cavalry":
-		var tw = create_tween().set_parallel(true)
-		tw.tween_property(self, "position:x", target.x, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_property(self, "position:z", target.z, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-		var hop = create_tween()
-		hop.tween_property(self, "position:y", target.y + 0.4, 0.19)
-		hop.tween_property(self, "position:y", target.y,       0.19).set_trans(Tween.TRANS_BOUNCE)
-		await tw.finished
-		_apply_pending_faces()
-		return
-
-	#var dir       = Vector3(target.x - position.x, 0, target.z - position.z).normalized()
-	#var roll_axis = Vector3(-dir.z, 0, dir.x)
-	#var roll_target = cube_mesh.rotation_degrees + roll_axis * 90.0
-	#var tw = create_tween().set_parallel(true)
-	#tw.tween_property(self, "position:x", target.x, 0.40).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	#tw.tween_property(self, "position:z", target.z, 0.40).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	#tw.tween_property(cube_mesh, "rotation_degrees", roll_target, 0.40).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	#await tw.finished
-	#cube_mesh.rotation_degrees = Vector3.ZERO
-	#_apply_pending_faces()
-	# ── NON-CAVALRY: HEAVY WEIGHTED AXIS ROLL ANIMATION ──
-	var start_pos = position
-	var move_vec = target - start_pos
-	var dir = move_vec.normalized()
-	
-	# Determine tile dimension space buffer (Assuming typical grid step size = 1.0)
-	var tile_step = move_vec.length()
-	var slide_dist = (tile_step - CUBE_SIZE) * 0.5
-	
-	# 1. THE SLIDE PHASE (Ease In-Out to the tile border edge)
-	var tw_slide = create_tween()
-	tw_slide.tween_property(self, "position", start_pos + (dir * slide_dist), 0.12)\
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	await tw_slide.finished
-	
-	# 2. THE HEAVY INERTIA LIFT (Ease-In slow climb up to ~45 degrees)
-	#var roll_axis = Vector3(-dir.z, 0, dir.x)
-	var roll_axis = Vector3(dir.z, 0, -dir.x)
-	var lift_target_rot = roll_axis * 42.0
-	var mid_pos = position + (dir * (CUBE_SIZE * 0.35)) + Vector3(0, CUBE_SIZE * 0.22, 0)
-	
+#func _animate_move(target: Vector3) -> void:
+	#if type == "cavalry":
+		#var tw = create_tween().set_parallel(true)
+		#tw.tween_property(self, "position:x", target.x, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		#tw.tween_property(self, "position:z", target.z, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		#var hop = create_tween()
+		#hop.tween_property(self, "position:y", target.y + 0.4, 0.19)
+		#hop.tween_property(self, "position:y", target.y,       0.19).set_trans(Tween.TRANS_BOUNCE)
+		#await tw.finished
+		#_apply_pending_faces()
+		#return
+#
+#
+	## ── NON-CAVALRY: HEAVY WEIGHTED AXIS ROLL ANIMATION ──
+	#var start_pos = position
+	#var move_vec = target - start_pos
+	#var dir = move_vec.normalized()
+	#
+	## Determine tile dimension space buffer (Assuming typical grid step size = 1.0)
+	#var tile_step = move_vec.length()
+	#var slide_dist = (tile_step - CUBE_SIZE) * 0.5
+	#
+	## 1. THE SLIDE PHASE (Ease In-Out to the tile border edge)
+	#var tw_slide = create_tween()
+	#tw_slide.tween_property(self, "position", start_pos + (dir * slide_dist), 0.12)\
+		#.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	#await tw_slide.finished
+	#
+	## 2. THE HEAVY INERTIA LIFT (Ease-In slow climb up to ~45 degrees)
+	##var roll_axis = Vector3(-dir.z, 0, dir.x)
+	#var roll_axis = Vector3(dir.z, 0, -dir.x)
+	#var lift_target_rot = roll_axis * 42.0
+	#var mid_pos = position + (dir * (CUBE_SIZE * 0.35)) + Vector3(0, CUBE_SIZE * 0.22, 0)
+	#
+	##var tw_lift = create_tween().set_parallel(true)
+	##tw_lift.tween_property(self, "position", mid_pos, 0.24)\
+		##.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	##tw_lift.tween_property(cube_mesh, "rotation_degrees", lift_target_rot, 0.24)\
+		##.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	##await tw_lift.finished
+	#
 	#var tw_lift = create_tween().set_parallel(true)
 	#tw_lift.tween_property(self, "position", mid_pos, 0.24)\
 		#.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	#tw_lift.tween_property(cube_mesh, "rotation_degrees", lift_target_rot, 0.24)\
+	#tw_lift.tween_property(self, "rotation_degrees", lift_target_rot, 0.24)\
 		#.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	#await tw_lift.finished
-	
-	var tw_lift = create_tween().set_parallel(true)
-	tw_lift.tween_property(self, "position", mid_pos, 0.24)\
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	tw_lift.tween_property(self, "rotation_degrees", lift_target_rot, 0.24)\
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	await tw_lift.finished
-	
-	## 3. THE SNAP SNAP DROP & SETTLE (Rapid drop over center of mass with a subtle bounce settle)
+	#
+	### 3. THE SNAP SNAP DROP & SETTLE (Rapid drop over center of mass with a subtle bounce settle)
+	##var final_rot = roll_axis * 90.0
+	##var tw_drop = create_tween().set_parallel(true)
+	##tw_drop.tween_property(self, "position", target, 0.14)\
+		##.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	##tw_drop.tween_property(cube_mesh, "rotation_degrees", final_rot, 0.14)\
+		##.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	##await tw_drop.finished
+	##
+	### 1. Firmly set the root token node to the target grid destination
+	##position = target
+	##
+	### 2. CRUCIAL STEP: Wipe the mesh rotation immediately so its local axes line up with the world.
+	### Because it matches global orientation instantly, faces won't mismatch or visually glitch.
+	##cube_mesh.rotation_degrees = Vector3.ZERO
+	#
 	#var final_rot = roll_axis * 90.0
 	#var tw_drop = create_tween().set_parallel(true)
 	#tw_drop.tween_property(self, "position", target, 0.14)\
 		#.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	#tw_drop.tween_property(cube_mesh, "rotation_degrees", final_rot, 0.14)\
+	#tw_drop.tween_property(self, "rotation_degrees", final_rot, 0.14)\
 		#.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	#await tw_drop.finished
 	#
-	## 1. Firmly set the root token node to the target grid destination
 	#position = target
+	#self.rotation_degrees = Vector3.ZERO # Resets the global rotation track matrix cleanly
 	#
-	## 2. CRUCIAL STEP: Wipe the mesh rotation immediately so its local axes line up with the world.
-	## Because it matches global orientation instantly, faces won't mismatch or visually glitch.
-	#cube_mesh.rotation_degrees = Vector3.ZERO
+	## 3. Apply the backend data mapping to the newly oriented faces
+	#_apply_pending_faces()
 	
-	var final_rot = roll_axis * 90.0
-	var tw_drop = create_tween().set_parallel(true)
-	tw_drop.tween_property(self, "position", target, 0.14)\
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw_drop.tween_property(self, "rotation_degrees", final_rot, 0.14)\
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	await tw_drop.finished
 	
-	position = target
-	self.rotation_degrees = Vector3.ZERO # Resets the global rotation track matrix cleanly
 	
-	# 3. Apply the backend data mapping to the newly oriented faces
+# ── FIX: DEFAULT TO FLAT SLIDE FOR ALL PIECES ──
+func _animate_move(target: Vector3) -> void:
+	# Check if the incoming state change actually demands a face transformation change
+	var is_transforming = !_pending_faces.is_empty() and _pending_faces.get("top") != faces.get("top")
+	
+	if is_transforming:
+		# ── OPTIONAL USER-TRIGGERED PHYSICAL AXIS ROLL ──
+		var start_pos = position
+		var move_vec = target - start_pos
+		var dir = move_vec.normalized()
+		var tile_step = move_vec.length()
+		var slide_dist = (tile_step - CUBE_SIZE) * 0.5
+		
+		# 1. Slide to the edge
+		var tw_slide = create_tween()
+		tw_slide.tween_property(self, "position", start_pos + (dir * slide_dist), 0.12)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		await tw_slide.finished
+		
+		# 2. Lift and tilt
+		var roll_axis = Vector3(dir.z, 0, -dir.x)
+		var lift_target_rot = roll_axis * 42.0
+		var mid_pos = position + (dir * (CUBE_SIZE * 0.35)) + Vector3(0, CUBE_SIZE * 0.22, 0)
+		
+		var tw_lift = create_tween().set_parallel(true)
+		tw_lift.tween_property(self, "position", mid_pos, 0.24)\
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+		tw_lift.tween_property(self, "rotation_degrees", lift_target_rot, 0.24)\
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+		await tw_lift.finished
+		
+		# 3. Drop and settle
+		var final_rot = roll_axis * 90.0
+		var tw_drop = create_tween().set_parallel(true)
+		tw_drop.tween_property(self, "position", target, 0.14)\
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw_drop.tween_property(self, "rotation_degrees", final_rot, 0.14)\
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		await tw_drop.finished
+		
+		position = target
+		self.rotation_degrees = Vector3.ZERO
+	else:
+		# ── CAVALRY STYLE FLAT SLIDE ROUTINE (THE DEFAULT BEHAVIOR) ──
+		var tw = create_tween().set_parallel(true)
+		tw.tween_property(self, "position:x", target.x, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		tw.tween_property(self, "position:z", target.z, 0.38).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		
+		# Give it a tiny, satisfying micro-hop to sell the slide kinetics
+		var hop = create_tween()
+		hop.tween_property(self, "position:y", target.y + 0.15, 0.19)
+		hop.tween_property(self, "position:y", target.y,       0.19).set_trans(Tween.TRANS_BOUNCE)
+		await tw.finished
+		
 	_apply_pending_faces()
 
 #func _apply_pending_faces() -> void:
