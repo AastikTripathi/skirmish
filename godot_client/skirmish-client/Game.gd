@@ -14,6 +14,7 @@ var unit_tokens:      Dictionary = {}   # uid → UnitToken3D
 var last_combat_seen: Dictionary = {}   # track to avoid re-triggering
 var mine_markers:     Dictionary = {}   # "x_y" → MeshInstance3D
 var engine_pid: int = -1
+var active_transformation_menu: Control = null
 
 const COLS: int = 10
 const ROWS: int = 10
@@ -45,37 +46,6 @@ var mat_arsenal:  StandardMaterial3D
 var mat_fortress: StandardMaterial3D
 var mat_mine:     StandardMaterial3D
 
-#func _ready() -> void:
-	#_build_materials()
-	#_build_board()
-	#_position_camera()
-	#_build_hud()
-#
-	#NetworkManager.connected_to_server.connect(_on_connected)
-	#NetworkManager.disconnected_from_server.connect(_on_disconnected)
-	#NetworkManager.state_updated.connect(_on_state_updated)
-	#NetworkManager.error_received.connect(_on_error_received)
-	#NetworkManager.room_id     = "skirmish_room"
-	#NetworkManager.player_name = "GodotCommander"
-	#NetworkManager.player_side = "North"
-	#NetworkManager.vs_ai       = true
-	#NetworkManager.connect_to_room()
-	#status_lbl.text = "Connecting…"
-#
-	#var env: Environment = $WorldEnvironment.environment
-	#env.ambient_light_source = Environment.AMBIENT_SOURCE_BG
-	#env.ambient_light_energy = 0.25 # Dim ambient light down so directional shadows pop
-#
-	## Enable Screen Space Ambient Occlusion (Brings out structural edges and cracks)
-	#env.ssao_enabled = true
-	#env.ssao_radius = 0.5
-	#env.ssao_intensity = 2.0
-#
-	## Enable Glow for the glowing UI overlays and action states
-	#env.glow_enabled = true
-	#env.glow_normalized = true
-	#env.glow_intensity = 0.4
-	#env.glow_bloom = 0.15
 	
 	
 func _ready() -> void:
@@ -436,26 +406,7 @@ func _handle_unit_click(token: Node3D) -> void:
 			_deselect()
 			
 			
-#
-#func _handle_tile_click(cell: Vector2i) -> void:
-	## Is there a unit on this tile?
-	#var ux = -1; var uy = -1
-	#for u in current_state.get("units", []):
-		#if u.get("x") == cell.x and u.get("y") == cell.y:
-			#ux = u.get("x"); uy = u.get("y")
-			#if u.get("side") == NetworkManager.player_side:
-				#selected_unit_id = u.get("id")
-				#_refresh_overlays()
-				#return
-			#else:
-				#if selected_unit_id != "":
-					#NetworkManager.send_action({"action": "attack", "x": cell.x, "y": cell.y})
-					#_deselect()
-				#return
-	## Empty tile — move
-	#if selected_unit_id != "":
-		#NetworkManager.send_action({"action": "move", "unitId": selected_unit_id, "x": cell.x, "y": cell.y})
-		#_deselect()
+
 		
 		
 func _handle_tile_click(cell: Vector2i) -> void:
@@ -483,9 +434,25 @@ func _handle_tile_click(cell: Vector2i) -> void:
 				return
 				
 	# Empty tile — move
+	#if selected_unit_id != "":
+		#NetworkManager.send_action({"action": "move", "unitId": selected_unit_id, "x": cell.x, "y": cell.y})
+		#_deselect()
+	# Empty tile — move + optional face transformation
+	# Empty tile — move
 	if selected_unit_id != "":
-		NetworkManager.send_action({"action": "move", "unitId": selected_unit_id, "x": cell.x, "y": cell.y})
-		_deselect()
+		if Input.is_key_pressed(KEY_F):
+			# Immediately calculate and commit the physical roll action without pausing
+			_execute_immediate_transform_move(cell)
+		else:
+			# Execute normal flat sliding action instantly
+			NetworkManager.send_action({
+				"action": "move",
+				"unitId": selected_unit_id,
+				"x": cell.x,
+				"y": cell.y,
+				"transform_to": null
+			})
+			_deselect()
 
 func _deselect() -> void:
 	selected_unit_id = ""
@@ -499,17 +466,7 @@ func _find_unit(uid: String) -> Dictionary:
 # ────────────────────────────────────────────────────────────────────────────
 # State update
 # ────────────────────────────────────────────────────────────────────────────
-#func _on_state_updated(state_data: Dictionary) -> void:
-	#current_state = state_data
-	#_sync_units(state_data)
-	#_sync_mines(state_data)
-	#_update_hud(state_data)
-	#_refresh_overlays()
-	#_play_combat_anim(state_data)
-	#_check_winner(state_data)
-	
-	
-	
+
 func _on_state_updated(state_data: Dictionary) -> void:
 	current_state = state_data
 	
@@ -557,25 +514,6 @@ func _play_combat_anim(st: Dictionary) -> void:
 			if int(round(tok.position.x)) == tx and int(round(tok.position.z)) == ty:
 				tok.play_hit_shake()
 
-#func _sync_units(state_data: Dictionary) -> void:
-	#var seen: Array = []
-	#var connected_ids: Array = state_data.get("connectedUnitIds", [])
-	#for u in state_data.get("units", []):
-		#var uid = u.get("id", "")
-		#seen.append(uid)
-		#if unit_tokens.has(uid):
-			#unit_tokens[uid].update_state(u)
-		#else:
-			#var tok = preload("res://UnitToken3D.gd").new()
-			#units_node.add_child(tok)
-			#tok.setup(u)
-			#unit_tokens[uid] = tok
-		#unit_tokens[uid].set_stranded(uid not in connected_ids)
-	#for uid in unit_tokens.keys():
-		#if uid not in seen:
-			#var tok = unit_tokens[uid]
-			#unit_tokens.erase(uid)
-			#tok.play_death()   # animated death, frees itself
 			
 			
 func _sync_units(state_data: Dictionary, exploded_mines: Array[Vector2i]) -> void:
@@ -629,20 +567,6 @@ func _sequence_mine_death(tok: UnitToken3D, mine_pos: Vector2i) -> void:
 	# 3. Play the death dissolution animation inside the beam
 	tok.play_death()
 
-#func _sync_mines(state_data: Dictionary) -> void:
-	#var current_keys: Array = []
-	#for mine in state_data.get("mines", []):
-		#var mx = mine.get("x", 0)
-		#var my = mine.get("y", 0)
-		#var key = "%d_%d" % [mx, my]
-		#current_keys.append(key)
-		#if not mine_markers.has(key):
-			#mine_markers[key] = _spawn_mine_marker(mx, my)
-	## Remove cleared mines
-	#for key in mine_markers.keys():
-		#if key not in current_keys:
-			#mine_markers[key].queue_free()
-			#mine_markers.erase(key)
 			
 			
 func _sync_mines(state_data: Dictionary) -> void:
@@ -911,3 +835,60 @@ func _show_victory(winner: String) -> void:
 		overlay.queue_free()
 		NetworkManager.send_action({"action": "restart"}))
 	vb.add_child(rb)
+	
+	
+	
+	
+
+
+# ── INSTANT TACTICAL DISPATCH ENGINE: NO MENUS ──
+func _execute_immediate_transform_move(cell: Vector2i) -> void:
+	var sel_unit = _find_unit(selected_unit_id)
+	var token: UnitToken3D = unit_tokens.get(selected_unit_id)
+	if not sel_unit or not token:
+		return
+		
+	# Instantly project rotation axis metrics using displacement distance delta
+	var dx = cell.x - int(sel_unit.get("x", 0))
+	var dy = cell.y - int(sel_unit.get("y", 0))
+	var predicted_face_symbol = _calculate_top_face_after_roll(token.faces, dx, dy)
+	
+	var symbol_to_type = {
+		"I": "infantry", "C": "cavalry", "A": "artillery", 
+		"R": "relay", "M": "mine", "S": "shield"
+	}
+	var predicted_type = symbol_to_type.get(predicted_face_symbol, "infantry")
+	
+	# Transmit packet instantly down the socket pipeline
+	NetworkManager.send_action({
+		"action": "move",
+		"unitId": selected_unit_id,
+		"x": cell.x,
+		"y": cell.y,
+		"transform_to": predicted_type
+	})
+	
+	_deselect()
+
+
+
+# ── GEOMETRIC CUBE ORIENTATION SIMULATOR ──
+func _calculate_top_face_after_roll(current_faces: Dictionary, dx: int, dy: int) -> String:
+	var fallback = current_faces.get("top", "I")
+	if dx == 0 and dy == 0:
+		return fallback
+		
+	# Moving Right (+X): Left face tumbles to Top
+	if dx > 0 and abs(dx) >= abs(dy):
+		return current_faces.get("left", "M")
+	# Moving Left (-X): Right face tumbles to Top
+	elif dx < 0 and abs(dx) >= abs(dy):
+		return current_faces.get("right", "A")
+	# Moving Down (+Y): Back face tumbles to Top
+	elif dy > 0 and abs(dy) > abs(dx):
+		return current_faces.get("back", "R")
+	# Moving Up (-Y): Front face tumbles to Top
+	elif dy < 0 and abs(dy) > abs(dx):
+		return current_faces.get("front", "C")
+		
+	return fallback
