@@ -1,4 +1,3 @@
-
 # ai.py
 import copy
 import sys
@@ -432,12 +431,6 @@ class WarGameAI:
                 if ux == ax and uy == ay:
                     role_score += 1000.0
 
-            # if enemy_units:
-            #     dists = [max(abs(ux - e.get("x", 0)), abs(uy - e.get("y", 0))) for e in enemy_units]
-            #     min_dist = min(dists)
-            #     # Linear progression tracking (highly compressed to prevent scale pollution)
-            #     role_score += (45 - min_dist) * 8.0
-
             dist_to_goal = self.get_path_distance_to_goal(ux, uy, target_y)
             role_score += (20 - dist_to_goal) * 4.0
 
@@ -465,7 +458,6 @@ class WarGameAI:
                 "Threat_Def": threat_score
             }
         return total_score
-
 
     def _detect_behavioral_anomaly(self, uid: int) -> str or None:
         history = self.position_history.get(uid, [])
@@ -502,89 +494,7 @@ class WarGameAI:
 
         return min([(e["x"], e["y"]) for e in lane_enemies], key=lambda p: abs(p[0] - ux) + abs(p[1] - unit["y"]))
 
-    # def get_all_legal_moves(self, units: list, moved_this_turn: list) -> list:
-    #     legal_actions = []
-    #     ai_units = [u for u in units if u.get("side") == self.side]
-    #     connected_unit_ids = self.engine.get_connected_units(units, self.side)
-    #
-    #     for unit in ai_units:
-    #         if unit["id"] not in connected_unit_ids:
-    #             continue
-    #         if unit["id"] in moved_this_turn:
-    #             continue
-    #
-    #         unit_stats = self.engine.get_stats(unit["type"])
-    #         for target in units:
-    #             if target.get("side") == self.enemy_side:
-    #                 if self.engine.check_line_of_sight(unit["x"], unit["y"], target["x"], target["y"],
-    #                                                    unit_stats["range"], units):
-    #                     combat = self.engine.calculate_combat(units, self.side, target["x"], target["y"])
-    #                     if combat.get("valid"):
-    #                         legal_actions.append(
-    #                             {"action_type": "attack", "unitId": unit["id"], "x": target["x"], "y": target["y"]})
-    #
-    #         for dx in range(-3, 4):
-    #             for dy in range(-3, 4):
-    #                 tx, ty = unit["x"] + dx, unit["y"] + dy
-    #                 if 0 <= tx < 25 and 0 <= ty < 20:
-    #                     is_valid, _ = self.engine.validate_move(units, unit["id"], tx, ty, moved_this_turn)
-    #                     if is_valid:
-    #                         legal_actions.append({"action_type": "move", "unitId": unit["id"], "x": tx, "y": ty})
-    #     return legal_actions
 
-    # def get_all_legal_moves(self, units: list, moved_this_turn: list) -> list:
-    #     legal_actions = []
-    #     ai_units = [u for u in units if u.get("side") == self.side]
-    #     connected_unit_ids = self.engine.get_connected_units(units, self.side)
-    #
-    #     for unit in ai_units:
-    #         if unit["id"] not in connected_unit_ids:
-    #             continue
-    #         if unit["id"] in moved_this_turn:
-    #             continue
-    #
-    #         unit_stats = self.engine.get_stats(unit["type"])
-    #
-    #         # ── 1. GENERATE VALID COMBAT ACTIONS ──
-    #         for target in units:
-    #             if target.get("side") == self.enemy_side:
-    #                 if self.engine.check_line_of_sight(unit["x"], unit["y"], target["x"], target["y"],
-    #                                                    unit_stats["range"], units):
-    #                     combat = self.engine.calculate_combat(units, self.side, target["x"], target["y"])
-    #                     if combat.get("valid"):
-    #                         legal_actions.append(
-    #                             {"action_type": "attack", "unitId": unit["id"], "x": target["x"], "y": target["y"]})
-    #
-    #         # ── 2. GENERATE FLAT MOVEMENTS + OPTIONAL TRANSFORMATIONS ──
-    #         # Scan within the maximum possible speed bounds (Cavalry speed is 2)
-    #         for dx in range(-3, 4):
-    #             for dy in range(-3, 4):
-    #                 tx, ty = unit["x"] + dx, unit["y"] + dy
-    #                 if 0 <= tx < self.engine.cols and 0 <= ty < self.engine.rows:
-    #                     is_valid, _ = self.engine.validate_move(units, unit["id"], tx, ty, moved_this_turn)
-    #                     if is_valid:
-    #                         # Choice A: Flat slide to target tile, preserving current tactical configuration
-    #                         legal_actions.append({
-    #                             "action_type": "move",
-    #                             "unitId": unit["id"],
-    #                             "x": tx,
-    #                             "y": ty,
-    #                             "transform_to": None  # Keeps existing type
-    #                         })
-    #
-    #                         # Choice B: Flat slide to target tile, then execute an explicit face mutation
-    #                         # (Excluding 'relay' if rule layouts block direct conversion, otherwise full array)
-    #                         possible_faces = ["infantry", "cavalry", "artillery", "mine", "relay",  "shield"]
-    #                         for face in possible_faces:
-    #                             if face != unit["type"].lower():  # Only switch to a different face
-    #                                 legal_actions.append({
-    #                                     "action_type": "move",
-    #                                     "unitId": unit["id"],
-    #                                     "x": tx,
-    #                                     "y": ty,
-    #                                     "transform_to": face  # AI schedules a state switch upon landing
-    #                                 })
-    #     return legal_actions
 
     def get_all_legal_moves(self, units: list, moved_this_turn: list) -> list:
         legal_actions = []
@@ -615,7 +525,10 @@ class WarGameAI:
                 for dy in range(-3, 4):
                     tx, ty = unit["x"] + dx, unit["y"] + dy
                     if 0 <= tx < self.engine.cols and 0 <= ty < self.engine.rows:
-                        is_valid, _ = self.engine.validate_move(units, unit["id"], tx, ty, moved_this_turn)
+                        # is_valid, _ = self.engine.validate_move(units, unit["id"], tx, ty, moved_this_turn)
+
+                        is_valid, _ = self.engine.validate_move(units, unit["id"], tx, ty, moved_this_turn,
+                                                                self.turn_counter)
                         if is_valid:
                             # Choice A: Flat Slide
                             legal_actions.append({
@@ -640,28 +553,47 @@ class WarGameAI:
         return legal_actions
 
     def _calculate_exact_threat_map(self, units: list, side: str) -> set:
+        """
+        Generates a high-fidelity tactical vulnerability map by querying the
+        engine's combat proxy rules for all accessible tiles within enemy reach corridors.
+        """
         threatened_coords = set()
         enemy_side = "South" if side == "North" else "North"
         enemies = [u for u in units if u.get("side") == enemy_side]
 
+        # Fetch active lines of communication to accurately simulate enemy supply verification
+        try:
+            connected_enemies = self.engine.get_connected_units(units, enemy_side)
+        except Exception:
+            connected_enemies = set()
+
         for enemy in enemies:
+            # If an enemy unit is stranded out of supply, its movement is frozen (speed = 0)
+            if enemy["id"] not in connected_enemies:
+                continue
+
             ex, ey = enemy.get("x", 0), enemy.get("y", 0)
             e_type = enemy.get("type", "").lower()
+            stats = self.engine.get_stats(e_type)
 
-            # Map the exact combat ranges based on your new decoupled stats
-            if e_type == "cavalry":
-                reach = 2  # Matches speed/sliding bounds
-            elif e_type == "artillery":
-                reach = 3  # Matches long range threat profile
-            else:
-                reach = 2
+            # Maximum Operational envelope = Movement Speed budget + Weapon Fire Range
+            max_reach = stats.get("speed", 1) + stats.get("range", 1)
 
-            for dx in range(-reach, reach + 1):
-                for dy in range(-reach, reach + 1):
+            # Evaluate coordinates within the physical operational footprint of this enemy unit
+            for dx in range(-max_reach, max_reach + 1):
+                for dy in range(-max_reach, max_reach + 1):
                     tx, ty = ex + dx, ey + dy
-                    # Safely dynamically query engine grid limits
+
+                    # Ensure targets sit within active grid matrix boundaries
                     if 0 <= tx < self.engine.cols and 0 <= ty < self.engine.rows:
-                        threatened_coords.add((tx, ty))
+                        if (tx, ty) in threatened_coords:
+                            continue
+
+                        # Mock a hypothetical combat placement to test if the vector system clears the tile
+                        # We evaluate if the enemy side can successfully score a DESTROY or RETREAT force metric
+                        combat = self.engine.calculate_combat(units, enemy_side, tx, ty)
+                        if combat.get("valid") and combat.get("result") in ["DESTROY", "RETREAT"]:
+                            threatened_coords.add((tx, ty))
 
         return threatened_coords
 
@@ -680,18 +612,24 @@ class WarGameAI:
         Simulates the enemy's mindset by generating their best possible
         counter-action on the proposed board state and returning its score.
         """
-        # Create a mock state matching what the enemy sees
+        # ── DYNAMIC MOVE POOL ENFORCEMENT ──
+        # Calculate exactly how many alive units the enemy side possesses in this state
+        enemy_unit_count = sum(1 for u in hypothetical_units if u.get("side") == self.enemy_side)
+        simulated_moves_budget = max(1, enemy_unit_count)
+
+        # Create a mock state matching what the enemy sees with the dynamic budget
         enemy_state = {
             "units": hypothetical_units,
             "moved_units_this_turn": [],
             "attack_executed_this_turn": False,
-            "moves_left": 5
+            "moves_left": simulated_moves_budget
         }
 
         # Gather all legal actions the enemy could take in response
+        # Pass the empty list so it evaluates options assuming it's the start of their simulated turn
         enemy_actions = self.enemy_evaluator.get_all_legal_moves(hypothetical_units, [])
         if not enemy_actions:
-            return self.enemy_evaluator.evaluate_board(hypothetical_units)
+            return self.enemy_evaluator.evaluate_board(hypothetical_units, is_end_turn=True)
 
         best_enemy_response_score = -999999.0
 
@@ -707,20 +645,189 @@ class WarGameAI:
                 for u in ghost_board:
                     if u["id"] == e_action["unitId"]:
                         u["x"], u["y"] = e_action["x"], e_action["y"]
+
+                        # Apply face mutations in the simulation if the action schedules one
+                        chosen_face = e_action.get("transform_to")
+                        if chosen_face:
+                            u["type"] = chosen_face.lower()
+                            if chosen_face == "artillery":
+                                u["symbol"] = "A"
+                            elif chosen_face == "infantry":
+                                u["symbol"] = "I"
+                            elif chosen_face == "cavalry":
+                                u["symbol"] = "C"
+                            elif chosen_face == "relay":
+                                u["symbol"] = "R"
+                            elif chosen_face == "mine":
+                                u["symbol"] = "M"
+                            elif chosen_face == "shield":
+                                u["symbol"] = "S"
                         break
 
             # Score how good this state is for the enemy
-            enemy_score = self.enemy_evaluator.evaluate_board(ghost_board)
+            # A single counter-move represents an active pressure deployment step
+            is_final_sim_state = (simulated_moves_budget == 1)
+            enemy_score = self.enemy_evaluator.evaluate_board(ghost_board, is_end_turn=is_final_sim_state)
             if enemy_score > best_enemy_response_score:
                 best_enemy_response_score = enemy_score
 
         return best_enemy_response_score
 
+    def log_enemy_defensive_safeguards(self, current_units: list):
+        """
+        Scans and prints an accurate structural diagnostic layout of every enemy unit's
+        current defensive positioning, proxy safety, and braced vectors as they stand.
+        """
+        enemy_side = "North" if self.side == "South" else "South"
+        enemy_units = [u for u in current_units if u.get("side") == enemy_side]
+
+        print(f"\n========================================================")
+        print(f"📡 [STATIC MATRIX SCAN] Profiling Enemy Defense & Safelines")
+        print(f"========================================================")
+
+        if not enemy_units:
+            print("No enemy units detected on the grid matrix.")
+            return
+
+        for enemy in enemy_units:
+            ex, ey = enemy["x"], enemy["y"]
+            e_id = enemy["id"]
+
+            # Pull actual unit type, ensuring we don't accidentally print a secondary state label
+            e_type = enemy.get("type", "unknown").upper()
+
+            # Get base defense stats
+            base_def = self.engine.get_stats(enemy["type"]).get("defense", 0)
+
+            print(f"\n🎯 Target Node: {e_id} ({e_type}) at Coord: ({ex}, {ey})")
+            print(f"   ├─ Base Native Defense: {base_def}")
+
+            # Track structural terrain defenses
+            is_fortress = (ex, ey) in self.engine.fortresses
+            is_pass = (ex, ey) in self.engine.passes
+
+            if is_fortress:
+                print("   ├─ Terrain Safeguard: FORTRESS (+4 Defense, x2 Stack Multiplier)")
+            elif is_pass:
+                print("   ├─ Terrain Safeguard: PASS (+2 Defense, x2 Stack Multiplier)")
+            else:
+                print("   ├─ Terrain Safeguard: OPEN GROUND (Standard)")
+
+            print(f"   └─ Directional Brace Vectors (Where allies are physically standing):")
+
+            # Scan all 8 directions to check where actual defensive support stacks exist
+            for dx, dy in self.engine.directions:
+                # We look in the direction the proxy line physically extends
+                dir_label = self._get_direction_label(dx, dy)
+
+                # Extract pure protection provided by units standing in this specific direction
+                total_defense = self._extract_static_vector_defense(current_units, enemy, dx, dy)
+
+                # Account for how open ground baseline vs terrain baseline looks
+                terrain_base = (base_def + (4 if is_fortress else 2)) * 2 if (is_fortress or is_pass) else base_def
+
+                if total_defense > terrain_base:
+                    bonus = total_defense - terrain_base
+                    print(
+                        f"      ▪ [Line extending {dir_label}]: Total Defense={total_defense} | Proxy Support Stack = +{bonus}")
+                else:
+                    # If there are no allies in this direction, it retains the baseline terrain value
+                    print(
+                        f"      ▪ [Line extending {dir_label}]: Total Defense={total_defense} | No proxy backup in this vector")
+
+        print(f"========================================================\n")
+
+    def _extract_static_vector_defense(self, units: list, target_unit: dict, dx, dy) -> int:
+        """
+        Correctly extracts defensive values along a physical line extending in direction (dx, dy)
+        behind or beside the target unit without letting terrain buffs multiply proxy numbers.
+        """
+        connected_defenders = self.engine.get_connected_units(units, target_unit['side'])
+        if target_unit['id'] not in connected_defenders:
+            return 0
+
+        base_def = self.engine.get_stats(target_unit['type'])['defense']
+        is_fortress = (target_unit['x'], target_unit['y']) in self.engine.fortresses
+        is_pass = (target_unit['x'], target_unit['y']) in self.engine.passes
+
+        # Step outward in the physical direction (dx, dy) to collect the support stack
+        cx, cy = target_unit['x'] + dx, target_unit['y'] + dy
+        defender_line = []
+
+        while 0 <= cx < self.engine.cols and 0 <= cy < self.engine.rows:
+            if (cx, cy) in self.engine.mountains:
+                break
+            u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
+            if u:
+                if u['side'] == target_unit['side']:
+                    defender_line.append(u)
+                    cx += dx
+                    cy += dy
+                    continue
+                else:
+                    break
+            cx += dx
+            cy += dy
+
+        # 1. Calculate the target node's personal modified defense
+            # ── FIXED LOGIC IN AI.PY ──
+        target_personal_defense = base_def
+
+        # Only allow the pass terrain type to modify stats
+        if is_pass:
+            target_personal_defense += 2
+            total_defense = target_personal_defense * 2
+        else:
+            total_defense = target_personal_defense
+
+        if not defender_line:
+            return total_defense
+
+        def_head = defender_line[0]
+        if def_head['id'] in connected_defenders:
+            def_head_stats = self.engine.get_stats(def_head['type'])
+            def_head_dist = max(abs(def_head['x'] - target_unit['x']), abs(def_head['y'] - target_unit['y']))
+
+            if def_head_dist <= def_head_stats['range']:
+                total_defense += def_head_stats['defense']
+                for back_def in defender_line[1:]:
+                    if back_def['id'] in connected_defenders:
+                        total_defense += self.engine.get_stats(back_def['type'])['defense']
+            else:
+                # Check for Artillery covering fire exception in the stack
+                for idx, d_node in enumerate(defender_line):
+                    if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
+                        art_def_dist = max(abs(d_node['x'] - target_unit['x']), abs(d_node['y'] - target_unit['y']))
+                        if art_def_dist <= 3:
+                            total_defense += self.engine.get_stats("artillery")["defense"]
+                            for back_def in defender_line[idx + 1:]:
+                                if back_def['id'] in connected_defenders:
+                                    total_defense += self.engine.get_stats(back_def['type'])['defense']
+                            break
+
+        return total_defense
+
+    def _get_direction_label(self, dx, dy) -> str:
+        labels = {
+            (0, 1): "SOUTH", (0, -1): "NORTH", (1, 0): "EAST", (-1, 0): "WEST",
+            (1, 1): "SOUTHEAST", (1, -1): "NORTHEAST", (-1, 1): "SOUTHWEST", (-1, -1): "NORTHWEST"
+        }
+        return labels.get((dx, dy), "UNKNOWN")
 
 
 
     def select_best_action(self, current_state: dict, allowed_clusters: set = None) -> dict:
+
+
         units = current_state["units"]
+
+        # ─── INJECT THE SCANNER HERE ───
+        try:
+            self.log_enemy_defensive_safeguards(units)
+        except Exception as e:
+            print(f"⚠️ [LOG ERROR] Failed to run matrix scan layout: {e}")
+        # ───────────────────────────────
+
         moved_this_turn = current_state["moved_units_this_turn"]
         attack_executed = current_state["attack_executed_this_turn"]
 
@@ -751,10 +858,6 @@ class WarGameAI:
 
         enemy_side_label = "North" if self.side == "South" else "South"
 
-
-
-
-
         #  UPDATED SECURE VARIABLE INITIALIZATION BLOCK
         z3_safe_zones = set()  # Explicit top-level default guarantee
         if self._z3_safe_zones_turn != self.turn_counter:
@@ -782,17 +885,47 @@ class WarGameAI:
         if not actions:
             return {"action_type": "end_turn"}
 
+        # move_actions = [a for a in actions if a["action_type"] == "move"]
+        # attack_actions = [a for a in actions if a["action_type"] == "attack"]
+        #
+        # # --- FLAT ACTION EVALUATION POOL ---
+        # candidate_actions = move_actions + attack_actions
+        #
+        # if not candidate_actions:
+        #     return {"action_type": "end_turn"}
+        #
+        # diagnostic_log = {}
+        # actions = candidate_actions
+
         move_actions = [a for a in actions if a["action_type"] == "move"]
         attack_actions = [a for a in actions if a["action_type"] == "attack"]
 
-        # --- FLAT ACTION EVALUATION POOL ---
-        candidate_actions = move_actions + attack_actions
+        # ── STEP 1: PRIORITIZE FREE ATTACKS FROM CURRENT STATIONARY CONFIGURATIONS ──
+        if not attack_executed and attack_actions:
+            best_stationary_attack = None
+            best_stationary_score = -999999.0
 
-        if not candidate_actions:
+            for att in attack_actions:
+                # Query the symmetrical engine vector rules directly
+                combat = self.engine.calculate_combat(units, self.side, att["x"], att["y"])
+                if combat.get("valid") and combat["result"] in ["DESTROY", "RETREAT"]:
+                    # Establish standalone priority weight: DESTROY beats RETREAT
+                    att_score = 250000.0 + (combat["net_force"] * 1000.0 if combat["result"] == "DESTROY" else 80000.0)
+                    if att_score > best_stationary_score:
+                        best_stationary_score = att_score
+                        best_stationary_attack = att
+
+            # If an immediate safe execution path exists from our current spot, take it immediately!
+            if best_stationary_attack:
+                return best_stationary_attack
+
+        # ── STEP 2: MOVEMENT CONFIGURATION SELECTION POOL ──
+        # If no immediate free standstill attack is available, fall back to pure repositioning
+        if not move_actions:
             return {"action_type": "end_turn"}
 
         diagnostic_log = {}
-        actions = candidate_actions
+        actions = move_actions  # Safe movement processing loop execution
 
         ai_units = [u for u in units if u.get("side") == self.side]
         enemy_units = [u for u in units if u.get("side") == self.enemy_side]
@@ -807,7 +940,6 @@ class WarGameAI:
         #     if fork_sol:
         #         unit_fork_maps[au["id"]] = (fork_sol["x"], fork_sol["y"], fork_sol["fork_bonus"])
 
-
         #  SAFEGUARDED LAYER WITH FORK SOLVER DETECTION
         unit_fork_maps = {}
         if hasattr(self.smt_oracle, 'solve_geometric_fork'):
@@ -818,7 +950,6 @@ class WarGameAI:
                     unit_fork_maps[au["id"]] = (fork_sol["x"], fork_sol["y"], fork_sol["fork_bonus"])
 
         if self._safety_cache_turn != self.turn_counter:
-
             self._safety_cache = {}
             self._safety_cache_turn = self.turn_counter
         verified_safety_cache = self._safety_cache
@@ -826,6 +957,9 @@ class WarGameAI:
         for action in actions:
             temp = copy.deepcopy(units)
             mod = 0.0
+
+            z3_penalty_this_action = 0.0
+
             act_uid = action.get("unitId")
             dest_x, dest_y = action.get("x"), action.get("y")
 
@@ -886,6 +1020,7 @@ class WarGameAI:
                         if action["action_type"] == "attack":
                             if any(e["x"] == dest_x and e["y"] == dest_y for e in threatening_enemies):
                                 mod += 150000.0
+
                         elif action["action_type"] == "move":
                             try:
                                 before_connected = self.engine.get_connected_units(units, self.side)
@@ -911,6 +1046,8 @@ class WarGameAI:
             if action["action_type"] == "attack":
                 if attack_executed: continue
                 combat = self.engine.calculate_combat(temp, self.side, dest_x, dest_y)
+                # ── INJECT THIS LOG ──
+
                 if combat.get("valid"):
                     target_unit = next((u for u in temp if u["x"] == dest_x and u["y"] == dest_y), None)
                     is_target_cutoff = False
@@ -948,120 +1085,25 @@ class WarGameAI:
                 else:
                     mod -= 100000.0
 
-            # ── REFACTORED MOVE LOGIC WITH SINGLE-PASS SAFETY CACHING ──
-            # elif action["action_type"] == "move":
-            #     is_moving_into_danger = (dest_x, dest_y) in active_threatened_tiles
-            #     is_currently_in_danger = (acting_unit["x"], acting_unit["y"]) in active_threatened_tiles
-
-            #     if is_moving_into_danger:
-            #         nearby_allies = sum(1 for a in units if
-            #                             a["side"] == self.side and a["id"] != act_uid and max(abs(dest_x - a["x"]),
-            #                                                                                   abs(dest_y - a["y"])) <= 1)
-            #         if nearby_allies >= 1:
-            #             mod += 25000.0 * nearby_allies
-            #         else:
-            #             mod -= 45000.0
-            #     elif is_currently_in_danger and not is_moving_into_danger:
-            #         nearby_allies = sum(1 for a in units if a["side"] == self.side and a["id"] != act_uid and max(
-            #             abs(acting_unit["x"] - a["x"]), abs(acting_unit["y"] - a["y"])) <= 1)
-            #         if nearby_allies == 0:
-            #             mod += 35000.0
-
-            #     enemy_arsenals = self.engine.arsenals[self.enemy_side]
-            #     was_on_arsenal = acting_unit and (acting_unit["x"], acting_unit["y"]) in enemy_arsenals
-            #     if was_on_arsenal:
-            #         ax, ay = acting_unit["x"], acting_unit["y"]
-            #         other_occupant = any(
-            #             u["id"] != act_uid and u["x"] == ax and u["y"] == ay and u["side"] == self.side for u in units)
-            #         if not other_occupant and (dest_x, dest_y) != (ax, ay):
-            #             mod -= 40000.0
-
-            #     if (dest_x, dest_y) in enemy_arsenals:
-            #         mod += 15000.0
-
-            #     landed_on_mine = any(
-            #         m["x"] == dest_x and m["y"] == dest_y for m in current_state.get("mines", []))
-            #     if landed_on_mine:
-            #         temp = [unit for unit in temp if unit["id"] != act_uid]
-            #     else:
-            #         for u in temp:
-            #             if u.get("id") == act_uid:
-            #                 u["x"], u["y"] = dest_x, dest_y
-
-            #                 # ── FLUID TACTICAL STATE COMMITMENT ASSIGNMENT ──
-            #                 chosen_face = action.get("transform_to")
-            #                 if chosen_face:
-            #                     u["type"] = chosen_face.lower()
-            #                     if chosen_face == "artillery":
-            #                         u["symbol"] = "A"
-            #                     elif chosen_face == "infantry":
-            #                         u["symbol"] = "I"
-            #                     elif chosen_face == "cavalry":
-            #                         u["symbol"] = "C"
-            #                     elif chosen_face == "relay":
-            #                         u["symbol"] = "R"
-            #                     elif chosen_face == "mine":
-            #                         u["symbol"] = "M"
-            #                     elif chosen_face == "shield":
-            #                         u["symbol"] = "S"
-
-            #                     # ── CONTEXTUAL STRATEGIC TRANSFORMATION SCORING ──
-            #                     goal = local_goals.get(act_uid, "STAY")
-            #                     if goal in ["RETREAT", "DEFEND"] and chosen_face == "shield":
-            #                         mod += 400.0
-            #                     elif goal in ["ATTACK", "ATTACK_RUN"] and chosen_face == "artillery":
-            #                         mod += 300.0
-            #                     elif goal == "BLITZ_CHARGE" and chosen_face == "cavalry":
-            #                         mod += 250.0
-            #                     else:
-            #                         mod -= 100.0
-
-            #                 # ── EVALUATE PRE-CACHED MEMORY VALUES FROM THE GEOMETRIC ORACLE ──
-            #                 if act_uid in unit_fork_maps:
-            #                     fx, fy, f_bonus = unit_fork_maps[act_uid]
-            #                     if dest_x == fx and dest_y == fy:
-            #                         mod += f_bonus
-
-            #                 if (dest_x, dest_y) in z3_safe_zones:
-            #                     goal = local_goals.get(act_uid, "STAY")
-            #                     if goal in ["RETREAT", "DEFEND"]:
-            #                         mod += 350.0
-
-            #                 # ── COMBINATORIAL SMT HEURISTIC OPTIMIZATION GATE ──
-            #                 # Trigger the heavy optimization search strictly if walking into or contesting danger zones
-            #                 if is_moving_into_danger or (dest_x, dest_y) in z3_safe_zones:
-            #                     cache_key = (act_uid, dest_x, dest_y)
-            #                     if cache_key in verified_safety_cache:
-            #                         danger_score = verified_safety_cache[cache_key]
-            #                     else:
-            #                         acting_stats = self.engine.get_stats(acting_unit.get("type", "").lower())
-            #                         target_def = acting_stats.get("defense", 5)
-                                    
-            #                         # Query the new optimize threat-vector solver
-            #                         danger_score = self.smt_oracle.verify_action_safety(
-            #                             temp, self.side, (dest_x, dest_y), target_def, self.engine
-            #                         )
-            #                         verified_safety_cache[cache_key] = danger_score
-                                    
-            #                         if danger_score > 0:
-            #                             print(f"⚖️ [Z3 SMT COMBINATORIAL THREAT] Unit={act_uid} Target=({dest_x},{dest_y}) | Worst-Case Vulnerability Score: {danger_score}", file=sys.stderr)
-
-            #                     # If the worst-case combined force hits the break threshold, apply scaled penalty
-            #                     if danger_score >= 2.0:
-            #                         mod -= danger_score * 12500.0
-            #                 break
-
 
             # ── UPGRADED MOVE LOGIC WITH STRUCTURAL VULNERABILITY MATRIX ──
             elif action["action_type"] == "move":
                 is_currently_in_danger = (acting_unit["x"], acting_unit["y"]) in active_threatened_tiles
-                
+
                 # Check if an enemy can reach this vicinity next turn by combining their movement and attack range
+                # near_enemy_reach = False
+                # for e in enemy_units:
+                #     e_stats = self.engine.get_stats(e.get("type", ""))
+                #     max_reach = (2 if e.get("type", "").lower() == "cavalry" else 1) + e_stats.get("range", 2)
+                #     if max(abs(dest_x - e["x"]), abs(dest_y - e["y"])) <= max_reach + 1:
+                #         near_enemy_reach = True
+                #         break
+
                 near_enemy_reach = False
                 for e in enemy_units:
                     e_stats = self.engine.get_stats(e.get("type", ""))
                     max_reach = (2 if e.get("type", "").lower() == "cavalry" else 1) + e_stats.get("range", 2)
-                    if max(abs(dest_x - e["x"]), abs(dest_y - e["y"])) <= max_reach + 1:
+                    if max(abs(dest_x - e["x"]), abs(dest_y - e["y"])) <= max_reach:
                         near_enemy_reach = True
                         break
 
@@ -1070,7 +1112,8 @@ class WarGameAI:
                 if (dest_x, dest_y) in active_threatened_tiles:
                     nearby_allies = sum(1 for a in units if
                                         a["side"] == self.side and a["id"] != act_uid and max(abs(dest_x - a["x"]),
-                                                                                              abs(dest_y - a["y"])) <= 1)
+                                                                                              abs(dest_y - a[
+                                                                                                  "y"])) <= 1)
                     if nearby_allies >= 1:
                         mod += 25000.0 * nearby_allies
                     else:
@@ -1093,10 +1136,22 @@ class WarGameAI:
                 if (dest_x, dest_y) in enemy_arsenals:
                     mod += 15000.0
 
-                landed_on_mine = any(
-                    m["x"] == dest_x and m["y"] == dest_y for m in current_state.get("mines", []))
+                # landed_on_mine = any(
+                #     m["x"] == dest_x and m["y"] == dest_y for m in current_state.get("mines", []))
+                # if landed_on_mine:
+                #     temp = [unit for unit in temp if unit["id"] != act_uid]
+
+                landed_on_mine = False
+                if "mines" in current_state:
+                    for mine in current_state["mines"]:
+                        if mine["x"] == dest_x and mine["y"] == dest_y:
+                            landed_on_mine = True
+                            break
+
                 if landed_on_mine:
+                    mod -= 800000.0
                     temp = [unit for unit in temp if unit["id"] != act_uid]
+
                 else:
                     for u in temp:
                         if u.get("id") == act_uid:
@@ -1105,18 +1160,28 @@ class WarGameAI:
                             chosen_face = action.get("transform_to")
                             if chosen_face:
                                 u["type"] = chosen_face.lower()
-                                if chosen_face == "artillery": u["symbol"] = "A"
-                                elif chosen_face == "infantry": u["symbol"] = "I"
-                                elif chosen_face == "cavalry": u["symbol"] = "C"
-                                elif chosen_face == "relay": u["symbol"] = "R"
-                                elif chosen_face == "mine": u["symbol"] = "M"
-                                elif chosen_face == "shield": u["symbol"] = "S"
+                                if chosen_face == "artillery":
+                                    u["symbol"] = "A"
+                                elif chosen_face == "infantry":
+                                    u["symbol"] = "I"
+                                elif chosen_face == "cavalry":
+                                    u["symbol"] = "C"
+                                elif chosen_face == "relay":
+                                    u["symbol"] = "R"
+                                elif chosen_face == "mine":
+                                    u["symbol"] = "M"
+                                elif chosen_face == "shield":
+                                    u["symbol"] = "S"
 
                                 goal = local_goals.get(act_uid, "STAY")
-                                if goal in ["RETREAT", "DEFEND"] and chosen_face == "shield": mod += 400.0
-                                elif goal in ["ATTACK", "ATTACK_RUN"] and chosen_face == "artillery": mod += 300.0
-                                elif goal == "BLITZ_CHARGE" and chosen_face == "cavalry": mod += 250.0
-                                else: mod -= 100.0
+                                if goal in ["RETREAT", "DEFEND"] and chosen_face == "shield":
+                                    mod += 400.0
+                                elif goal in ["ATTACK", "ATTACK_RUN"] and chosen_face == "artillery":
+                                    mod += 300.0
+                                elif goal == "BLITZ_CHARGE" and chosen_face == "cavalry":
+                                    mod += 250.0
+                                else:
+                                    mod -= 100.0
 
                             if act_uid in unit_fork_maps:
                                 fx, fy, f_bonus = unit_fork_maps[act_uid]
@@ -1127,36 +1192,70 @@ class WarGameAI:
                                 if goal in ["RETREAT", "DEFEND"]: mod += 350.0
 
                             # ── DYNAMIC RISK AND STRUCTURAL LIABILITY CHECK ──
+                            # if is_moving_into_danger or (dest_x, dest_y) in z3_safe_zones:
+                            #     cache_key = (act_uid, dest_x, dest_y)
+                            #     if cache_key in verified_safety_cache:
+                            #         danger_score = verified_safety_cache[cache_key]
+                            #     else:
+                            #         acting_stats = self.engine.get_stats(u.get("type", "").lower())
+                            #         target_def = acting_stats.get("defense", 5)
+                            #
+                            #         danger_score = self.smt_oracle.verify_action_safety(
+                            #             temp, self.side, (dest_x, dest_y), target_def, self.engine
+                            #         )
+                            #         verified_safety_cache[cache_key] = danger_score
+                            #
+                            #         if danger_score > 0:
+                            #             print(
+                            #                 f"⚖️ [Z3 SMT COMBINATORIAL THREAT] Unit={act_uid} Target=({dest_x},{dest_y}) | Worst-Case Vulnerability Score: {danger_score}",
+                            #                 file=sys.stderr)
+                            #
+                            #     # if danger_score >= 2.0:
+                            #     #     mod -= danger_score * 12500.0
+                            #
+                            #     if danger_score >= 2.0:
+                            #         z3_penalty_this_action = danger_score * 12500.0
+                            #         mod -= z3_penalty_this_action
+
                             if is_moving_into_danger or (dest_x, dest_y) in z3_safe_zones:
-                                cache_key = (act_uid, dest_x, dest_y)
+                                cache_key = (act_uid, dest_x, dest_y, chosen_face)
                                 if cache_key in verified_safety_cache:
                                     danger_score = verified_safety_cache[cache_key]
                                 else:
                                     acting_stats = self.engine.get_stats(u.get("type", "").lower())
                                     target_def = acting_stats.get("defense", 5)
-                                    
+
+                                    # Pass the chosen face into the Oracle so Z3 knows we are transforming!
                                     danger_score = self.smt_oracle.verify_action_safety(
-                                        temp, self.side, (dest_x, dest_y), target_def, self.engine
+                                        temp, self.side, (dest_x, dest_y), target_def, self.engine,
+                                        target_transform_type=chosen_face
                                     )
                                     verified_safety_cache[cache_key] = danger_score
-                                    
-                                    if danger_score > 0:
-                                        print(f"⚖️ [Z3 SMT COMBINATORIAL THREAT] Unit={act_uid} Target=({dest_x},{dest_y}) | Worst-Case Vulnerability Score: {danger_score}", file=sys.stderr)
 
                                 if danger_score >= 2.0:
-                                    mod -= danger_score * 12500.0
-                                    
+                                    # Scale down the massive fear penalty so it doesn't cause stasis freezes
+                                    z3_penalty_this_action = danger_score * 1500.0
+                                    mod -= z3_penalty_this_action
+
+                                    # If we transformed into a defensive block, give an aggressive push incentive
+                                    if chosen_face in ["shield", "infantry"]:
+                                        mod += 2000.0  # Proactive stand bonus!
+
                                     # ── CRITICAL ADDITION: STRUCTURAL DISCONNECTION LETHALITY PROOF ──
                                     # If Z3 exposes that this unit can be destroyed next turn, check the macro operational cost
                                     post_mortality_units = [unit for unit in temp if unit["id"] != act_uid]
                                     try:
                                         connected_now = self.engine.get_connected_units(temp, self.side)
-                                        connected_after_death = self.engine.get_connected_units(post_mortality_units, self.side)
+                                        connected_after_death = self.engine.get_connected_units(post_mortality_units,
+                                                                                                self.side)
+
+
                                         cascading_losses = len(connected_now - connected_after_death)
                                         if cascading_losses > 0:
-                                            # Apply an absolute high-stakes shutdown penalty scaled by the sizing of the collapse
-                                            mod -= 450000.0 * cascading_losses
-                                            print(f"🛑 [HIGH-STAKES CRISIS DETECTED] Unit={act_uid} destruction isolates {cascading_losses} units! Core supply column failure penalized.", file=sys.stderr)
+                                            mod -= 35000.0 * cascading_losses
+                                            print(
+                                                f"🛑 [DYNAMIC RISK] Unit={act_uid} destruction isolates {cascading_losses} units.",
+                                                file=sys.stderr)
                                     except:
                                         pass
                             break
@@ -1205,41 +1304,41 @@ class WarGameAI:
                                     u["type"] = "shield"
                                 break
 
-            try:
-                enemy_potential_threat_power = 0.0
-                for e in enemy_units:
-                    if e["id"] in base_enemy_connected:
-                        e_type = e.get("type", "").lower()
-                        if "relay" in e_type: continue
-                        e_stats = self.engine.get_stats(e_type)
-                        e_move = 2 if "cavalry" in e_type else 1
-                        e_range = e_stats["range"]
-                        dist_to_dest = max(abs(e["x"] - action["x"]), abs(e["y"] - action["y"]))
-                        if dist_to_dest <= e_move + e_range:
-                            enemy_potential_threat_power += e_stats["offense"]
-
-                if enemy_potential_threat_power > 0:
-                    friendly_potential_support_power = 0.0
-                    for a in ai_units:
-                        if a["id"] != act_uid and a["id"] in base_my_connected:
-                            a_type = a.get("type", "").lower()
-                            if "relay" in a_type: continue
-                            a_stats = self.engine.get_stats(a_type)
-                            a_move = 2 if "cavalry" in a_type else 1
-                            dist_to_dest = max(abs(a["x"] - action["x"]), abs(a["y"] - action["y"]))
-                            if dist_to_dest <= a_move + 1:
-                                friendly_potential_support_power += a_stats["offense"]
-
-                    acting_stats = self.engine.get_stats(acting_unit.get("type", "").lower())
-                    total_friendly_power = friendly_potential_support_power + acting_stats["offense"]
-
-                    if friendly_potential_support_power == 0.0:
-                        mod -= 50000.0
-
-                    if enemy_potential_threat_power > total_friendly_power:
-                        mod -= (enemy_potential_threat_power - total_friendly_power) * 1200.0
-            except:
-                pass
+            # try:
+            #     enemy_potential_threat_power = 0.0
+            #     for e in enemy_units:
+            #         if e["id"] in base_enemy_connected:
+            #             e_type = e.get("type", "").lower()
+            #             if "relay" in e_type: continue
+            #             e_stats = self.engine.get_stats(e_type)
+            #             e_move = 2 if "cavalry" in e_type else 1
+            #             e_range = e_stats["range"]
+            #             dist_to_dest = max(abs(e["x"] - action["x"]), abs(e["y"] - action["y"]))
+            #             if dist_to_dest <= e_move + e_range:
+            #                 enemy_potential_threat_power += e_stats["offense"]
+            #
+            #     if enemy_potential_threat_power > 0:
+            #         friendly_potential_support_power = 0.0
+            #         for a in ai_units:
+            #             if a["id"] != act_uid and a["id"] in base_my_connected:
+            #                 a_type = a.get("type", "").lower()
+            #                 if "relay" in a_type: continue
+            #                 a_stats = self.engine.get_stats(a_type)
+            #                 a_move = 2 if "cavalry" in a_type else 1
+            #                 dist_to_dest = max(abs(a["x"] - action["x"]), abs(a["y"] - action["y"]))
+            #                 if dist_to_dest <= a_move + 1:
+            #                     friendly_potential_support_power += a_stats["offense"]
+            #
+            #         acting_stats = self.engine.get_stats(acting_unit.get("type", "").lower())
+            #         total_friendly_power = friendly_potential_support_power + acting_stats["offense"]
+            #
+            #         if friendly_potential_support_power == 0.0:
+            #             mod -= 50000.0
+            #
+            #         if enemy_potential_threat_power > total_friendly_power:
+            #             mod -= (enemy_potential_threat_power - total_friendly_power) * 1200.0
+            # except:
+            #     pass
 
             try:
                 enemy_connected_before_action = self.engine.get_connected_units(units, self.enemy_side)
@@ -1265,8 +1364,10 @@ class WarGameAI:
                     for lost_id in lost_ids:
                         lost_unit = next((u for u in units if u["id"] == lost_id), None)
                         if lost_unit:
-                            if "relay" in lost_unit.get("type", "").lower(): cutoff_penalty += 6000.0
-                            else: cutoff_penalty += 3500.0
+                            if "relay" in lost_unit.get("type", "").lower():
+                                cutoff_penalty += 6000.0
+                            else:
+                                cutoff_penalty += 3500.0
                     mod -= cutoff_penalty
             except:
                 pass
@@ -1278,8 +1379,10 @@ class WarGameAI:
                 frozen_turns = 0
                 if acting_unit and len(history_here) >= 3:
                     for pos in reversed(history_here[-6:]):
-                        if pos == (acting_unit["x"], acting_unit["y"]): frozen_turns += 1
-                        else: break
+                        if pos == (acting_unit["x"], acting_unit["y"]):
+                            frozen_turns += 1
+                        else:
+                            break
                 stasis_divisor = max(0.1, 1.0 - (frozen_turns // 2) * 0.4)
                 cohesion_factor = base_cohesion_factor * stasis_divisor
                 mod -= (lost * cohesion_factor)
@@ -1291,11 +1394,16 @@ class WarGameAI:
 
                 if u_type == "relay":
                     if goal == "ESCAPE":
-                        dist_enemy_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
-                        dist_enemy_after = min(self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+                        dist_enemy_before = min(
+                            self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in
+                            enemy_units) if enemy_units else 99
+                        dist_enemy_after = min(
+                            self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in
+                            enemy_units) if enemy_units else 99
                         mod += (dist_enemy_after - dist_enemy_before) * 300.0
 
-                        allies_adjacent = sum(1 for a in ai_units if "relay" not in a.get("type", "").lower() and max(abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1)
+                        allies_adjacent = sum(1 for a in ai_units if "relay" not in a.get("type", "").lower() and max(
+                            abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1)
                         mod += allies_adjacent * 250.0
                     else:
                         try:
@@ -1311,30 +1419,43 @@ class WarGameAI:
 
                             was_connected = acting_unit["id"] in before_connected
                             is_connected_now = acting_unit["id"] in after_connected
-                            if not was_connected and is_connected_now: mod += 8000.0
-                            elif not is_connected_now: mod -= 100000.0
+                            if not was_connected and is_connected_now:
+                                mod += 8000.0
+                            elif not is_connected_now:
+                                mod -= 100000.0
                         except:
                             pass
 
                         enemy_combat = [e for e in enemy_units if "relay" not in e.get("type", "").lower()]
                         if enemy_combat:
-                            min_dist_enemy = min(max(abs(action["x"] - e["x"]), abs(action["y"] - e["y"])) for e in enemy_combat)
-                            if min_dist_enemy <= 1: mod -= 5000.0
-                            elif min_dist_enemy <= 3: mod -= 1000.0
+                            min_dist_enemy = min(
+                                max(abs(action["x"] - e["x"]), abs(action["y"] - e["y"])) for e in enemy_combat)
+                            if min_dist_enemy <= 1:
+                                mod -= 5000.0
+                            elif min_dist_enemy <= 3:
+                                mod -= 1000.0
 
                 else:
                     if goal == "RETREAT":
-                        dist_enemy_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
-                        dist_enemy_after = min(self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in enemy_units) if enemy_units else 99
+                        dist_enemy_before = min(
+                            self.get_path_distance(acting_unit["x"], acting_unit["y"], (e["x"], e["y"])) for e in
+                            enemy_units) if enemy_units else 99
+                        dist_enemy_after = min(
+                            self.get_path_distance(action["x"], action["y"], (e["x"], e["y"])) for e in
+                            enemy_units) if enemy_units else 99
                         mod += (dist_enemy_after - dist_enemy_before) * 150.0
 
-                        allies_adjacent = sum(1 for a in ai_units if max(abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1 and a["id"] != act_uid)
+                        allies_adjacent = sum(1 for a in ai_units if
+                                              max(abs(action["x"] - a["x"]), abs(action["y"] - a["y"])) <= 1 and a[
+                                                  "id"] != act_uid)
                         mod += allies_adjacent * 100.0
 
-                        if (action["x"], action["y"]) in self.engine.fortresses or (action["x"], action["y"]) in self.engine.passes:
+                        if (action["x"], action["y"]) in self.engine.fortresses or (action["x"],
+                                                                                    action["y"]) in self.engine.passes:
                             mod += 400.0
 
-                        mod += (action["y"] - acting_unit["y"] if self.side == "South" else acting_unit["y"] - action["y"]) * 100.0
+                        mod += (action["y"] - acting_unit["y"] if self.side == "South" else acting_unit["y"] - action[
+                            "y"]) * 100.0
 
                     elif goal in ["ATTACK_RUN", "BLITZ_CHARGE"]:
                         if enemy_units:
@@ -1342,16 +1463,21 @@ class WarGameAI:
                             dist_before = self.get_path_distance(acting_unit["x"], acting_unit["y"], target_p)
                             dist_after = self.get_path_distance(action["x"], action["y"], target_p)
                             mod += (dist_before - dist_after) * 200.0
-                        if (action["x"], action["y"]) in self.engine.fortresses or (action["x"], action["y"]) in self.engine.passes:
+                        if (action["x"], action["y"]) in self.engine.fortresses or (action["x"],
+                                                                                    action["y"]) in self.engine.passes:
                             mod += 300.0
 
                     elif goal == "DEFEND":
-                        possessions = list(self.engine.arsenals[self.side]) + [(r["x"], r["y"]) for r in ai_units if "relay" in r.get("type", "").lower()]
+                        possessions = list(self.engine.arsenals[self.side]) + [(r["x"], r["y"]) for r in ai_units if
+                                                                               "relay" in r.get("type", "").lower()]
                         if possessions:
-                            dist_before = min(self.get_path_distance(acting_unit["x"], acting_unit["y"], p) for p in possessions)
+                            dist_before = min(
+                                self.get_path_distance(acting_unit["x"], acting_unit["y"], p) for p in possessions)
                             dist_after = min(self.get_path_distance(action["x"], action["y"], p) for p in possessions)
-                            if dist_after in [1, 2]: mod += 500.0
-                            elif dist_after < dist_before: mod += 200.0
+                            if dist_after in [1, 2]:
+                                mod += 500.0
+                            elif dist_after < dist_before:
+                                mod += 200.0
                             if (action["x"], action["y"]) in self.engine.fortresses: mod += 300.0
 
                     elif goal == "TRAVEL":
@@ -1369,13 +1495,41 @@ class WarGameAI:
                 dist_moved = max(abs(acting_unit["x"] - action["x"]), abs(acting_unit["y"] - action["y"]))
                 if dist_moved <= 1: mod += 15.0
 
+            # if action["action_type"] in ["move", "attack"]:
+            #     max_enemy_counter_score = self._simulate_enemy_best_response(temp)
+            #     enemy_advantage_delta = max_enemy_counter_score - baseline_score
+            #     if enemy_advantage_delta > 5000.0:
+            #         mod -= enemy_advantage_delta * 1.5
+
             if action["action_type"] in ["move", "attack"]:
                 max_enemy_counter_score = self._simulate_enemy_best_response(temp)
                 enemy_advantage_delta = max_enemy_counter_score - baseline_score
-                if enemy_advantage_delta > 5000.0:
-                    mod -= enemy_advantage_delta * 1.5
+                counter_penalty = (enemy_advantage_delta - 5000.0) * 1.5 if enemy_advantage_delta > 5000.0 else 0.0
 
-            is_final_state = (action["action_type"] == "end_turn" or current_state.get("moves_left", 5) == 1)
+                if counter_penalty > 0 and z3_penalty_this_action > 0:
+                    mod -= max(counter_penalty,
+                               z3_penalty_this_action) - z3_penalty_this_action  # only add the excess, don't double-apply
+                elif counter_penalty > 0:
+                    mod -= counter_penalty
+
+            # is_final_state = (action["action_type"] == "end_turn" or current_state.get("moves_left", 5) == 1)
+            # my_breakdown = self.evaluate_board(temp, return_breakdown=True, base_enemy_connected=base_enemy_connected,
+            #                                    is_end_turn=is_final_state)
+            #
+            # if my_breakdown["TOTAL"] + mod < best_score - 500.0:
+            #     continue
+
+            # 1. Count exactly how many of your own units are currently alive on the board
+            current_alive_count = sum(1 for u in units if u.get("side") == self.side)
+
+            # 2. Establish that as your dynamic maximum turn budget (minimum of 1)
+            max_turn_capacity = max(1, current_alive_count)
+
+            # 3. Determine if this action constitutes the final move of the turn loop
+            is_final_state = (
+                        action["action_type"] == "end_turn" or current_state.get("moves_left", max_turn_capacity) == 1)
+
+            # 4. Proceed with your standard board evaluation breakdown
             my_breakdown = self.evaluate_board(temp, return_breakdown=True, base_enemy_connected=base_enemy_connected,
                                                is_end_turn=is_final_state)
 
@@ -1416,22 +1570,31 @@ class WarGameAI:
         for uid, data in diagnostic_log.items():
             ref_unit = next(u for u in units if u["id"] == uid)
             print("\n" + "=" * 80, file=sys.stderr)
-            print(f"⚠️ DIAGNOSTIC ALERT: Unit ID {uid} [{ref_unit['type'].upper()}] at ({ref_unit['x']}, {ref_unit['y']}) is in state: {data['anomaly']}", file=sys.stderr)
+            print(
+                f"⚠️ DIAGNOSTIC ALERT: Unit ID {uid} [{ref_unit['type'].upper()}] at ({ref_unit['x']}, {ref_unit['y']}) is in state: {data['anomaly']}",
+                file=sys.stderr)
             print(f"Historical Positions Tracking Queue: {self.position_history[uid]}", file=sys.stderr)
             print("-" * 80, file=sys.stderr)
-            print(f"{'PROPOSED TARGET':<18} | {'FINAL SCORE':<12} | {'ROLE EVAL':<10} | {'COHESION':<10} | {'THREATS':<10} | {'MODIFIER':<10}", file=sys.stderr)
+            print(
+                f"{'PROPOSED TARGET':<18} | {'FINAL SCORE':<12} | {'ROLE EVAL':<10} | {'COHESION':<10} | {'THREATS':<10} | {'MODIFIER':<10}",
+                file=sys.stderr)
             print("-" * 80, file=sys.stderr)
 
             sorted_choices = sorted(data["choices"], key=lambda c: c["score"], reverse=True)
             for choice in sorted_choices:
                 act = choice["action"]
                 bd = choice["breakdown"]
-                tgt = f"{act['action_type'].upper()} -> ({act['x']}, {act['y']})" if act['action_type'] != 'end_turn' else "END_TURN"
-                print(f"{tgt:<18} | {choice['score']:<12.1f} | {bd['Role_Exec']:<10.1f} | {bd['Cohesion']:<10.1f} | {bd['Threat_Def']:<10.1f} | {choice['mod_applied']:<10.1f}", file=sys.stderr)
+                tgt = f"{act['action_type'].upper()} -> ({act['x']}, {act['y']})" if act[
+                                                                                         'action_type'] != 'end_turn' else "END_TURN"
+                print(
+                    f"{tgt:<18} | {choice['score']:<12.1f} | {bd['Role_Exec']:<10.1f} | {bd['Cohesion']:<10.1f} | {bd['Threat_Def']:<10.1f} | {choice['mod_applied']:<10.1f}",
+                    file=sys.stderr)
 
             if len(sorted_choices) >= 2:
                 top_choice = sorted_choices[0]
-                forward_choices = [c for c in sorted_choices if c['action']['action_type'] == 'move' and abs(c['action']['y'] - target_y) < abs(ref_unit['y'] - target_y)]
+                forward_choices = [c for c in sorted_choices if
+                                   c['action']['action_type'] == 'move' and abs(c['action']['y'] - target_y) < abs(
+                                       ref_unit['y'] - target_y)]
                 if forward_choices and top_choice != forward_choices[0]:
                     f_choice = forward_choices[0]
                     print("\n💡 ROOT CAUSE ANALYSIS:", file=sys.stderr)
@@ -1439,12 +1602,32 @@ class WarGameAI:
                     coh_delta = f_choice['breakdown']['Cohesion'] - top_choice['breakdown']['Cohesion']
                     loss_delta = f_choice['mod_applied'] - top_choice['mod_applied']
 
-                    print(f"   • Forward movement was rejected in favor of {top_choice['action']['action_type'].upper()}.", file=sys.stderr)
-                    if coh_delta < 0: print(f"   • Cohesion Deficit: Moving forward would drop Cohesion score by {abs(coh_delta):.1f} points.", file=sys.stderr)
-                    if role_delta < 0: print(f"   • Role Penalty: Moving forward would lose out on {abs(role_delta):.1f} objective value points.", file=sys.stderr)
-                    if loss_delta < 0: print(f"   • Structural Loss: Move broke lines, triggering a penalty of {abs(loss_delta):.1f} points.", file=sys.stderr)
+                    print(
+                        f"   • Forward movement was rejected in favor of {top_choice['action']['action_type'].upper()}.",
+                        file=sys.stderr)
+                    if coh_delta < 0: print(
+                        f"   • Cohesion Deficit: Moving forward would drop Cohesion score by {abs(coh_delta):.1f} points.",
+                        file=sys.stderr)
+                    if role_delta < 0: print(
+                        f"   • Role Penalty: Moving forward would lose out on {abs(role_delta):.1f} objective value points.",
+                        file=sys.stderr)
+                    if loss_delta < 0: print(
+                        f"   • Structural Loss: Move broke lines, triggering a penalty of {abs(loss_delta):.1f} points.",
+                        file=sys.stderr)
             print("=" * 80 + "\n", file=sys.stderr)
+
+            # ─── REAL-TIME EXECUTION LIVE LOG INSERTION POINT ───
+        if best_action and best_action.get("action_type") == "attack":
+            # Run combat engine metrics one final time on the true, active board state
+            final_combat = self.engine.calculate_combat(units, self.side, best_action["x"], best_action["y"])
+            if final_combat.get("valid"):
+                print(f"\n💥 [AI REAL-TIME COMBAT ENGAGEMENT]")
+                print(f"   ├─ Attacking Unit ID: {best_action['unitId']}")
+                print(f"   ├─ Target Coordinates: ({best_action['x']}, {best_action['y']})")
+                print(f"   ├─ Engine Stated Offense: {final_combat['offense']}")
+                print(f"   ├─ Engine Stated Defense: {final_combat['defense']}")
+                print(f"   └─ Net Force Vector: {final_combat['net_force']} -> Result: {final_combat['result']}\n")
+            # ────────────────────────────────────────────────────
 
         return best_action if best_action else {"action_type": "end_turn"}
 
-    
