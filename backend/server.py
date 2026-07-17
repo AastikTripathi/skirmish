@@ -148,7 +148,7 @@ def generate_random_layout():
                 occupied.add((ax, ay))
 
     # 2. Place Relays adjacent to Arsenals (ensuring supply connection)
-    directions = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
+    directions = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
     north_relays = []
     for ax, ay in list(north_arsenals):
         placed = False
@@ -225,7 +225,7 @@ def generate_random_layout():
                     all_valid_cells.append((x, y))
 
         loc_cells = [c for c in all_valid_cells if c in starting_loc]
-        
+
         placed_units = []
         # Place 11 units (out of 15, i.e. > 70%) on LoC cells
         num_loc_to_place = min(11, len(loc_cells))
@@ -252,7 +252,7 @@ def generate_random_layout():
         for idx, r in enumerate(relays):
             prefix = "n" if side == "North" else "s"
             units_list.append({
-                "id": f"{prefix}-rel-{idx+1}",
+                "id": f"{prefix}-rel-{idx + 1}",
                 "side": side,
                 "type": "Relay",
                 "symbol": "R",
@@ -340,9 +340,9 @@ def check_win_condition(units: list, arsenals: dict = None) -> str | None:
         south_arsenals = set(tuple(a) for a in arsenals.get("South", []))
 
     # Full capture: you must occupy ALL enemy arsenal tiles at once
-    if north_arsenals.issubset(south_pos):   # South holds both North arsenals
+    if north_arsenals.issubset(south_pos):  # South holds both North arsenals
         return "South"
-    if south_arsenals.issubset(north_pos):   # North holds both South arsenals
+    if south_arsenals.issubset(north_pos):  # North holds both South arsenals
         return "North"
 
     # Deactivation win condition: if one side has active (connected) units but the other side
@@ -360,8 +360,8 @@ def check_win_condition(units: list, arsenals: dict = None) -> str | None:
     return None
 
 
-
-def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, player_side: str = "North", layout_type: str = "skirmish_10x10"):
+def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, player_side: str = "North",
+                    layout_type: str = "skirmish_10x10"):
     if room_id not in rooms:
         rooms[room_id] = {
             "state": get_initial_state(),
@@ -369,7 +369,7 @@ def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, p
             "connections": [],
             "password": None,
             "vs_ai": vs_ai,
-            "ai_vs_ai": ai_vs_ai, # Track if both sides are automated
+            "ai_vs_ai": ai_vs_ai,  # Track if both sides are automated
             "sim_running": False,  # Flag to prevent spawning duplicate task threads
             "turn_counter": 0,
             "ai_position_history": {},
@@ -387,15 +387,23 @@ def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, p
         }
         rooms[room_id]["state"]["units"] = [
             # North Forces (Unique faces: I, A, C, R, M, S)
-            {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-            {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-            {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-            {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
+            {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0,
+             "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+            {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1,
+             "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+            {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2,
+             "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+            {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2,
+             "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
             # South Forces (Unique faces: I, A, C, R, M, S)
-            {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-            {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-            {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-            {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
+            {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9,
+             "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+            {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8,
+             "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+            {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7,
+             "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+            {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7,
+             "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
         ]
 
 
@@ -526,9 +534,20 @@ async def run_ai_simulation(room_id: str):
                             new_faces = rotate_cube_faces(faces, dx, dy)
                             u["faces"] = new_faces
 
+
                             transform_target = best_act.get("transform_to")
+                            symbol_map = {"artillery": "A", "infantry": "I", "cavalry": "C",
+                                          "relay": "R", "mine": "M", "shield": "S"}
+
                             if transform_target is not None:
                                 u["type"] = str(transform_target).lower()
+                                target_symbol = symbol_map[u["type"]]
+
+                                # Force the chosen face onto "top" so faces, symbol, and type all agree
+                                found_face = next((k for k, v in new_faces.items() if v == target_symbol), None)
+                                if found_face and found_face != "top":
+                                    new_faces["top"], new_faces[found_face] = new_faces[found_face], new_faces["top"]
+                                u["faces"] = new_faces
                             else:
                                 # AUTOMATIC IDENTITY SYNC FALLBACK LAYER
                                 if new_faces["top"] != u_symbol_before:
@@ -536,20 +555,9 @@ async def run_ai_simulation(room_id: str):
                                                "M": "mine", "S": "shield"}
                                     if new_faces["top"] in mapping:
                                         u["type"] = mapping[new_faces["top"]]
+                                u["faces"] = new_faces
 
-                            # Map visual character representation accurately
-                            if u["type"] == "artillery":
-                                u["symbol"] = "A"
-                            elif u["type"] == "infantry":
-                                u["symbol"] = "I"
-                            elif u["type"] == "cavalry":
-                                u["symbol"] = "C"
-                            elif u["type"] == "relay":
-                                u["symbol"] = "R"
-                            elif u["type"] == "mine":
-                                u["symbol"] = "M"
-                            elif u["type"] == "shield":
-                                u["symbol"] = "S"
+                            u["symbol"] = u["faces"]["top"]
 
                             if transform_target is not None:
                                 print(f"🎲 [AI ACTIVE ROLL] Unit ID={best_act['unitId']} rolled to Type: {u['type']}")
@@ -578,6 +586,23 @@ async def run_ai_simulation(room_id: str):
                     st["moves_left"] -= 1
                     st["moved_units_this_turn"].append(best_act["unitId"])
 
+                # elif best_act["action_type"] == "attack":
+                #     tx, ty = best_act["x"], best_act["y"]
+                #     mover = next((u for u in st["units"] if u["id"] == best_act["unitId"]), None)
+                #     combat = engine.calculate_combat(st["units"], current_side, tx, ty)
+                #     if combat.get("valid"):
+                #         if combat["result"] == "DESTROY":
+                #             st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
+                #         st["last_combat"] = {
+                #             "attackerX": mover["x"] if mover else tx,
+                #             "attackerY": mover["y"] if mover else ty,
+                #             "targetX": tx, "targetY": ty, "result": combat["result"]
+                #         }
+                #         print(
+                #             f"⚔️ [SIM AI ATTACK] {current_side} Unit {best_act['unitId']} hit ({tx}, {ty}) -> {combat['result']}")
+                #     else:
+                #         print(f"❌ [SIM AI ATTACK INVALID] ({tx}, {ty}) -> {combat.get('reason')}")
+
                 elif best_act["action_type"] == "attack":
                     tx, ty = best_act["x"], best_act["y"]
                     mover = next((u for u in st["units"] if u["id"] == best_act["unitId"]), None)
@@ -585,6 +610,11 @@ async def run_ai_simulation(room_id: str):
                     if combat.get("valid"):
                         if combat["result"] == "DESTROY":
                             st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
+                        elif combat["result"] == "RETREAT":
+                            for u in st["units"]:
+                                if u["x"] == tx and u["y"] == ty:
+                                    u["suppressed_until_turn"] = room.get("turn_counter", 0) + 1
+                                    break
                         st["last_combat"] = {
                             "attackerX": mover["x"] if mover else tx,
                             "attackerY": mover["y"] if mover else ty,
@@ -601,11 +631,16 @@ async def run_ai_simulation(room_id: str):
 
                 await broadcast_room_state(room_id)
 
-            # Hand over active control matrix directly to opposing instance
+
             room["history"].clear()
             room["turn_counter"] = room.get("turn_counter", 0) + 1
-            st["turn"] = "South" if current_side == "North" else "North"
-            st["moves_left"] = 5
+            next_sim_side = "South" if current_side == "North" else "North"
+            st["turn"] = next_sim_side
+
+            # ── UPGRADED DYNAMIC BUDGET CONFIGURATION ──
+            active_pieces = [u for u in st["units"] if u["side"] == next_sim_side]
+            st["moves_left"] = max(1, len(active_pieces))
+
             st["moved_units_this_turn"] = []
             st["attack_executed_this_turn"] = False
             st["last_combat"] = None
@@ -670,30 +705,36 @@ async def run_ai_turn_if_needed(room_id: str):
                         new_faces = rotate_cube_faces(faces, dx, dy)
                         u["faces"] = new_faces
 
+
                         transform_target = best_act.get("transform_to")
+                        symbol_map = {"artillery": "A", "infantry": "I", "cavalry": "C",
+                                      "relay": "R", "mine": "M", "shield": "S"}
+
                         if transform_target is not None:
                             u["type"] = str(transform_target).lower()
+                            target_symbol = symbol_map[u["type"]]
+
+                            # Force the chosen face onto "top" so faces, symbol, and type all agree
+                            found_face = next((k for k, v in new_faces.items() if v == target_symbol), None)
+                            if found_face and found_face != "top":
+                                new_faces["top"], new_faces[found_face] = new_faces[found_face], new_faces["top"]
+                            u["faces"] = new_faces
                         else:
                             # AUTOMATIC IDENTITY SYNC FALLBACK LAYER
                             if new_faces["top"] != u_symbol_before:
-                                mapping = {"A": "artillery", "I": "infantry", "C": "cavalry", "R": "relay", "M": "mine",
-                                           "S": "shield"}
+                                mapping = {"A": "artillery", "I": "infantry", "C": "cavalry", "R": "relay",
+                                           "M": "mine", "S": "shield"}
                                 if new_faces["top"] in mapping:
                                     u["type"] = mapping[new_faces["top"]]
+                            u["faces"] = new_faces
 
-                        # Map visual character representation accurately
-                        if u["type"] == "artillery":
-                            u["symbol"] = "A"
-                        elif u["type"] == "infantry":
-                            u["symbol"] = "I"
-                        elif u["type"] == "cavalry":
-                            u["symbol"] = "C"
-                        elif u["type"] == "relay":
-                            u["symbol"] = "R"
-                        elif u["type"] == "mine":
-                            u["symbol"] = "M"
-                        elif u["type"] == "shield":
-                            u["symbol"] = "S"
+                        u["symbol"] = u["faces"]["top"]
+
+                        if transform_target is not None:
+                            print(f"🎲 [AI ACTIVE ROLL] Unit ID={best_act['unitId']} rolled to Type: {u['type']}")
+                        else:
+                            print(
+                                f"🚄 [AI FLAT SLIDE] Unit ID={best_act['unitId']} slid flatly. Synced Type: {u['type']}")
                         break
 
                 # 1. AI Mine Spawning
@@ -714,6 +755,23 @@ async def run_ai_turn_if_needed(room_id: str):
                 st["moves_left"] -= 1
                 st["moved_units_this_turn"].append(best_act["unitId"])
 
+            # elif best_act["action_type"] == "attack":
+            #     tx, ty = best_act["x"], best_act["y"]
+            #     mover = next((u for u in st["units"] if u["id"] == best_act["unitId"]), None)
+            #     combat = engine.calculate_combat(st["units"], ai_side, tx, ty)
+            #     if combat.get("valid"):
+            #         if combat["result"] == "DESTROY":
+            #             st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
+            #         st["last_combat"] = {
+            #             "attackerX": mover["x"] if mover else tx,
+            #             "attackerY": mover["y"] if mover else ty,
+            #             "targetX": tx, "targetY": ty, "result": combat["result"]
+            #         }
+            #         print(
+            #             f"⚔️ [AI ATTACK] Unit {best_act['unitId']} targeted ({tx}, {ty}) -> Result: {combat['result']}")
+            #     else:
+            #         print(f"❌ [AI ATTACK INVALID] Targeted ({tx}, {ty}) -> Reason: {combat.get('reason')}")
+
             elif best_act["action_type"] == "attack":
                 tx, ty = best_act["x"], best_act["y"]
                 mover = next((u for u in st["units"] if u["id"] == best_act["unitId"]), None)
@@ -721,6 +779,11 @@ async def run_ai_turn_if_needed(room_id: str):
                 if combat.get("valid"):
                     if combat["result"] == "DESTROY":
                         st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
+                    elif combat["result"] == "RETREAT":
+                        for u in st["units"]:
+                            if u["x"] == tx and u["y"] == ty:
+                                u["suppressed_until_turn"] = room.get("turn_counter", 0) + 1
+                                break
                     st["last_combat"] = {
                         "attackerX": mover["x"] if mover else tx,
                         "attackerY": mover["y"] if mover else ty,
@@ -741,14 +804,20 @@ async def run_ai_turn_if_needed(room_id: str):
             if check_win_condition(st["units"], room.get("arsenals")):
                 break
 
-        # ── FIXED: ALL MOVEMENTS COMPLETED. NOW SWITCH CONTROL TO PLAYER ──
+
+                # ── FIXED: ALL MOVEMENTS COMPLETED. NOW SWITCH CONTROL TO PLAYER ──
         print(f"🔄 [TURN SWITCH] AI finished all actions. Control to {player_side}.")
         st["turn"] = player_side
-        st["moves_left"] = 5
+
+        # ── UPGRADED DYNAMIC BUDGET CONFIGURATION ──
+        active_pieces = [u for u in st["units"] if u["side"] == player_side]
+        st["moves_left"] = max(1, len(active_pieces))
+
         st["moved_units_this_turn"] = []
         st["attack_executed_this_turn"] = False
         st["last_combat"] = None
         await broadcast_room_state(room_id)
+
 
 @app.websocket("/ws/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
@@ -857,14 +926,16 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     await websocket.send_json({"type": "error", "message": "No pending choice for you."})
                     continue
                 unit_id = pending["unitId"]
-                symbol = data.get("symbol") # 'I', 'A', 'C', 'R', 'M', or 'S'
+                symbol = data.get("symbol")  # 'I', 'A', 'C', 'R', 'M', or 'S'
                 if symbol not in ("I", "A", "C", "R", "M", "S"):
                     await websocket.send_json({"type": "error", "message": "Invalid symbol choice."})
                     continue
-                
+
                 for u in st["units"]:
                     if u["id"] == unit_id:
-                        faces = u.get("faces", {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "A"})
+                        faces = u.get("faces",
+                                      {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R", "left": "M",
+                                       "right": "A"})
                         found_face = None
                         for k, v in faces.items():
                             if v == symbol:
@@ -874,23 +945,28 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             old_top = faces["top"]
                             faces["top"] = symbol
                             faces[found_face] = old_top
-                        
+
                         u["faces"] = faces
                         u["symbol"] = symbol
-                        if symbol == "I": u["type"] = "infantry"
-                        elif symbol == "A": u["type"] = "artillery"
-                        elif symbol == "C": u["type"] = "cavalry"
-                        elif symbol == "R": u["type"] = "relay"
-                        elif symbol == "M": u["type"] = "mine"
-                        elif symbol == "S": u["type"] = "shield"
-                        
+                        if symbol == "I":
+                            u["type"] = "infantry"
+                        elif symbol == "A":
+                            u["type"] = "artillery"
+                        elif symbol == "C":
+                            u["type"] = "cavalry"
+                        elif symbol == "R":
+                            u["type"] = "relay"
+                        elif symbol == "M":
+                            u["type"] = "mine"
+                        elif symbol == "S":
+                            u["type"] = "shield"
+
                         print(f"🌟 [LAZARUS CHOICE] Unit {unit_id} reshaped to {symbol}. New faces: {faces}")
                         break
-                
+
                 st["awaiting_lazarus_choice"] = None
                 await broadcast_room_state(room_id)
                 continue
-
 
             if action == "move":
                 if st["moves_left"] <= 0:
@@ -901,7 +977,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 tx, ty = data.get("x"), data.get("y")
                 transform_target = data.get("transform_to")
 
-                is_valid, reason = engine.validate_move(st["units"], unit_id, tx, ty, st["moved_units_this_turn"])
+                #is_valid, reason = engine.validate_move(st["units"], unit_id, tx, ty, st["moved_units_this_turn"])
+                is_valid, reason = engine.validate_move(st["units"], unit_id, tx, ty, st["moved_units_this_turn"],
+                                                        room["turn_counter"])
+
                 if is_valid:
                     save_state_to_history(room_id)  # Log history frame
                     print(
@@ -922,25 +1001,34 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             dy = ty - u["y"]
                             u["x"], u["y"] = tx, ty
 
+
                             if transform_target is not None:
-                                faces = u.get("faces",
-                                                {"top": u["symbol"], "bottom": "S", "front": "C", "back": "R",
-                                                "left": "M", "right": "A"})
+                                target_symbol = {"artillery": "A", "infantry": "I", "cavalry": "C",
+                                                 "relay": "R", "mine": "M", "shield": "S"}[transform_target.lower()]
+
+                                faces = u.get("faces", {...})
                                 new_faces = rotate_cube_faces(faces, dx, dy)
+
+                                # Force the chosen face to the top, swapping with whatever was there
+                                found_face = next((k for k, v in new_faces.items() if v == target_symbol), None)
+                                if found_face and found_face != "top":
+                                    new_faces["top"], new_faces[found_face] = new_faces[found_face], new_faces["top"]
+
                                 u["faces"] = new_faces
-                                u["symbol"] = new_faces["top"]
-                                u["type"] = str(transform_target).lower()
+                                u["symbol"] = new_faces["top"]  # now guaranteed == target_symbol
+                                u["type"] = transform_target.lower()
+
                                 print(
                                     f"🎲 [ACTIVE ROLL] Unit ID={unit_id} moved dx={dx}, dy={dy} -> Type: {u['type']}")
                             else:
                                 print(f"🚄 [FLAT SLIDE] Unit ID={unit_id} slid flatly. Orientation kept.")
                             break
-                    
+
                     # 1. Mine Spawning: If symbol before was M, spawn mine at u_prev_x, u_prev_y
                     if u_symbol_before == "M" and u_prev_x is not None:
                         st["mines"].append({"x": u_prev_x, "y": u_prev_y, "side": u_side_before})
                         print(f"💣 [MINE SPAWNED] at ({u_prev_x}, {u_prev_y}) by side={u_side_before}")
-                    
+
                     # 2. Mine Detonation: If landed on a cell containing a mine, detonate!
                     mine_triggered = None
                     for mine in st["mines"]:
@@ -951,13 +1039,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                         st["mines"].remove(mine_triggered)
                         st["units"] = [unit for unit in st["units"] if unit["id"] != unit_id]
                         print(f"💥 [MINE DETONATED] at ({tx}, {ty}). Unit {unit_id} vaporized!")
-                    
+
                     # 3. Lazarus Pit check: If unit is still alive and landed on a Lazarus Pit, trigger choice
                     unit_still_alive = any(unit["id"] == unit_id for unit in st["units"])
                     if unit_still_alive and (tx, ty) in room.get("lazarus_pits", set()):
                         st["awaiting_lazarus_choice"] = {"unitId": unit_id, "side": u_side_before}
-                        print(f"🌟 [LAZARUS PIT TRIGGERED] Unit {unit_id} landed at ({tx}, {ty}). Awaiting choice from {u_side_before}")
-                    
+                        print(
+                            f"🌟 [LAZARUS PIT TRIGGERED] Unit {unit_id} landed at ({tx}, {ty}). Awaiting choice from {u_side_before}")
+
                     st["moves_left"] -= 1
                     st["moved_units_this_turn"].append(unit_id)
                     await broadcast_room_state(room_id)
@@ -971,26 +1060,44 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     continue
 
                 tx, ty = data.get("x"), data.get("y")
+                # ADD THIS BLOCK — dump full unit state before combat resolves
+                for u in st["units"]:
+                    print(f"[UNIT STATE] id={u['id']} type={u['type']} symbol={u['symbol']} pos=({u['x']},{u['y']})")
 
                 # Block attacking shielded units
                 target_unit = next((u for u in st["units"] if u["x"] == tx and u["y"] == ty), None)
                 if target_unit and target_unit.get("symbol") == "S":
-                    await websocket.send_json({"type": "error", "message": "Target unit is shielded and immune to attacks."})
+                    await websocket.send_json(
+                        {"type": "error", "message": "Target unit is shielded and immune to attacks."})
                     continue
 
                 combat = engine.calculate_combat(st["units"], st["turn"], tx, ty)
+                print(
+                    f"[COMBAT DEBUG] offense={combat.get('offense')} defense={combat.get('defense')} net={combat.get('net_force')} result={combat.get('result')}")
 
                 if combat.get("valid"):
                     save_state_to_history(room_id)  # Log history frame
                     res = combat["result"]
                     attacker_unit = next((u for u in st["units"] if u["side"] == st["turn"] and
                                           abs(u["x"] - tx) <= 3 and abs(u["y"] - ty) <= 3), None)
-                    print(f"[ATTACK] Success: target=({tx},{ty}) result={res} in room={room_id}. History size now: {len(room['history'])}")
+                    print(
+                        f"[ATTACK] Success: target=({tx},{ty}) result={res} in room={room_id}. History size now: {len(room['history'])}")
                     if res == "DESTROY":
                         st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
                         msg = "Strike Success! Unit eliminated."
+                    # elif res == "RETREAT":
+                    #     target_unit["suppressed_until_turn"] = room["turn_counter"] + 2
+                    #     msg = "Attack repelled — target suppressed and cannot move next turn."
+
+                    elif res == "RETREAT":
+                        for u in st["units"]:
+                            if u["x"] == tx and u["y"] == ty:
+                                u["suppressed_until_turn"] = room["turn_counter"] + 1
+                                break
+                        msg = "Attack repelled — target suppressed and cannot move next turn."
                     else:
                         msg = "Attack repelled."
+
 
                     st["last_combat"] = {
                         "attackerX": attacker_unit["x"] if attacker_unit else tx,
@@ -1001,7 +1108,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     await broadcast_room_state(room_id)
                 else:
                     print(f"[ATTACK] Refused: target=({tx},{ty}) in room={room_id} because: {combat.get('reason')}")
-                    await websocket.send_json({"type": "error", "message": combat.get("reason", "Invalid attack target.")})
+                    await websocket.send_json(
+                        {"type": "error", "message": combat.get("reason", "Invalid attack target.")})
 
             elif action == "undo":
                 if room["history"]:
@@ -1029,14 +1137,22 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     "mines": [],
                     "awaiting_lazarus_choice": None,
                     "units": [
-                        {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-                        {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-                        {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-                        {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
-                        {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9, "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-                        {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8, "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-                        {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7, "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-                        {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7, "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
+                        {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0,
+                         "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+                        {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1,
+                         "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+                        {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2,
+                         "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+                        {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2,
+                         "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
+                        {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9,
+                         "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
+                        {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8,
+                         "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
+                        {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7,
+                         "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
+                        {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7,
+                         "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
                     ],
                     "turn": "North",
                     "moves_left": 5,
@@ -1051,28 +1167,32 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     room["sim_running"] = True
                     asyncio.create_task(run_ai_simulation(room_id))
 
+
             # elif action == "end_turn":
             #     room["history"].clear()  # Wipe undo stack when turn officially locks down
+            #     room["turn_counter"] = room.get("turn_counter", 0) + 1
             #     next_side = "South" if st["turn"] == "North" else "North"
             #     st["turn"] = next_side
             #     st["moves_left"] = 5
             #     st["moved_units_this_turn"] = []
-            #     st["attack_executed_this_turn"] = False
-            #     await broadcast_room_state(room_id)
-
             elif action == "end_turn":
                 room["history"].clear()  # Wipe undo stack when turn officially locks down
                 room["turn_counter"] = room.get("turn_counter", 0) + 1
                 next_side = "South" if st["turn"] == "North" else "North"
                 st["turn"] = next_side
-                st["moves_left"] = 5
+
+
+                # Count the remaining pieces belonging to the incoming team side
+                active_pieces = [u for u in st["units"] if u["side"] == next_side]
+                st["moves_left"] = max(1, len(active_pieces))
+
                 st["moved_units_this_turn"] = []
                 st["attack_executed_this_turn"] = False
                 st["last_combat"] = None
 
                 # Broadcast the shift to South's turn immediately
                 await broadcast_room_state(room_id)
-                
+
                 # --- INTERCEPT FOR AI MATCH PLAY ---
                 if room.get("vs_ai", False):
                     asyncio.create_task(run_ai_turn_if_needed(room_id))
