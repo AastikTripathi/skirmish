@@ -389,20 +389,20 @@ def initialize_room(room_id: str, vs_ai: bool = False, ai_vs_ai: bool = False, p
             # North Forces (Unique faces: I, A, C, R, M, S)
             {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0,
              "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-            {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1,
+            {"id": "n-rel-1", "type": "relay",     "symbol": "R", "side": "North", "x": 4, "y": 1,
              "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-            {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2,
+            {"id": "n-inf-1", "type": "mine",      "symbol": "M", "side": "North", "x": 3, "y": 2,
              "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-            {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2,
+            {"id": "n-cav-1", "type": "cavalry",   "symbol": "C", "side": "North", "x": 5, "y": 2,
              "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
             # South Forces (Unique faces: I, A, C, R, M, S)
             {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9,
              "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-            {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8,
+            {"id": "s-rel-1", "type": "relay",     "symbol": "R", "side": "South", "x": 5, "y": 8,
              "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-            {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7,
+            {"id": "s-inf-1", "type": "mine",      "symbol": "M", "side": "South", "x": 6, "y": 7,
              "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-            {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7,
+            {"id": "s-cav-1", "type": "cavalry",   "symbol": "C", "side": "South", "x": 4, "y": 7,
              "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
         ]
 
@@ -527,19 +527,15 @@ async def run_ai_simulation(room_id: str):
                             dy = best_act["y"] - u["y"]
                             u["x"], u["y"] = best_act["x"], best_act["y"]
 
-                            # Always execute the matrix rotation layout checks
-                            faces = u.get("faces",
-                                          {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I",
-                                           "right": "A"})
-                            new_faces = rotate_cube_faces(faces, dx, dy)
-                            u["faces"] = new_faces
-
-
                             transform_target = best_act.get("transform_to")
                             symbol_map = {"artillery": "A", "infantry": "I", "cavalry": "C",
                                           "relay": "R", "mine": "M", "shield": "S"}
 
                             if transform_target is not None:
+                                faces = u.get("faces",
+                                              {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I",
+                                               "right": "A"})
+                                new_faces = rotate_cube_faces(faces, dx, dy)
                                 u["type"] = str(transform_target).lower()
                                 target_symbol = symbol_map[u["type"]]
 
@@ -548,22 +544,11 @@ async def run_ai_simulation(room_id: str):
                                 if found_face and found_face != "top":
                                     new_faces["top"], new_faces[found_face] = new_faces[found_face], new_faces["top"]
                                 u["faces"] = new_faces
-                            else:
-                                # AUTOMATIC IDENTITY SYNC FALLBACK LAYER
-                                if new_faces["top"] != u_symbol_before:
-                                    mapping = {"A": "artillery", "I": "infantry", "C": "cavalry", "R": "relay",
-                                               "M": "mine", "S": "shield"}
-                                    if new_faces["top"] in mapping:
-                                        u["type"] = mapping[new_faces["top"]]
-                                u["faces"] = new_faces
-
-                            u["symbol"] = u["faces"]["top"]
-
-                            if transform_target is not None:
+                                u["symbol"] = u["faces"]["top"]
                                 print(f"🎲 [AI ACTIVE ROLL] Unit ID={best_act['unitId']} rolled to Type: {u['type']}")
                             else:
                                 print(
-                                    f"🚄 [AI FLAT SLIDE] Unit ID={best_act['unitId']} slid flatly. Synced Type: {u['type']}")
+                                    f"🚄 [AI FLAT SLIDE] Unit ID={best_act['unitId']} slid flatly. Orientation kept.")
                             break
 
                     # 1. AI vs AI Mine Spawning
@@ -609,6 +594,15 @@ async def run_ai_simulation(room_id: str):
                     combat = engine.calculate_combat(st["units"], current_side, tx, ty)
                     if combat.get("valid"):
                         if combat["result"] == "DESTROY":
+                            # First-turn kill banner
+                            if room.get("turn_counter", 0) == 0:
+                                target_unit = next((u for u in st["units"] if u["x"] == tx and u["y"] == ty), None)
+                                t_type = target_unit.get("type", "?").upper() if target_unit else "?"
+                                print(f"")
+                                print(f"╔══════════════════════════════════════════════════════╗")
+                                print(f"║  ⚡ FIRST-TURN KILL  |  {current_side} destroys {t_type} at ({tx},{ty})")
+                                print(f"╚══════════════════════════════════════════════════════╝")
+                                print(f"")
                             st["units"] = [u for u in st["units"] if not (u["x"] == tx and u["y"] == ty)]
                         elif combat["result"] == "RETREAT":
                             for u in st["units"]:
@@ -698,19 +692,15 @@ async def run_ai_turn_if_needed(room_id: str):
                         dy = best_act["y"] - u["y"]
                         u["x"], u["y"] = best_act["x"], best_act["y"]
 
-                        # Always execute matrix rotation updates
-                        faces = u.get("faces",
-                                      {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I",
-                                       "right": "A"})
-                        new_faces = rotate_cube_faces(faces, dx, dy)
-                        u["faces"] = new_faces
-
-
                         transform_target = best_act.get("transform_to")
                         symbol_map = {"artillery": "A", "infantry": "I", "cavalry": "C",
                                       "relay": "R", "mine": "M", "shield": "S"}
 
                         if transform_target is not None:
+                            faces = u.get("faces",
+                                          {"top": u["symbol"], "bottom": "A", "front": "C", "back": "R", "left": "I",
+                                           "right": "A"})
+                            new_faces = rotate_cube_faces(faces, dx, dy)
                             u["type"] = str(transform_target).lower()
                             target_symbol = symbol_map[u["type"]]
 
@@ -719,22 +709,11 @@ async def run_ai_turn_if_needed(room_id: str):
                             if found_face and found_face != "top":
                                 new_faces["top"], new_faces[found_face] = new_faces[found_face], new_faces["top"]
                             u["faces"] = new_faces
-                        else:
-                            # AUTOMATIC IDENTITY SYNC FALLBACK LAYER
-                            if new_faces["top"] != u_symbol_before:
-                                mapping = {"A": "artillery", "I": "infantry", "C": "cavalry", "R": "relay",
-                                           "M": "mine", "S": "shield"}
-                                if new_faces["top"] in mapping:
-                                    u["type"] = mapping[new_faces["top"]]
-                            u["faces"] = new_faces
-
-                        u["symbol"] = u["faces"]["top"]
-
-                        if transform_target is not None:
+                            u["symbol"] = u["faces"]["top"]
                             print(f"🎲 [AI ACTIVE ROLL] Unit ID={best_act['unitId']} rolled to Type: {u['type']}")
                         else:
                             print(
-                                f"🚄 [AI FLAT SLIDE] Unit ID={best_act['unitId']} slid flatly. Synced Type: {u['type']}")
+                                f"🚄 [AI FLAT SLIDE] Unit ID={best_act['unitId']} slid flatly. Orientation kept.")
                         break
 
                 # 1. AI Mine Spawning
@@ -1139,19 +1118,19 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     "units": [
                         {"id": "n-art-1", "type": "artillery", "symbol": "A", "side": "North", "x": 4, "y": 0,
                          "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-                        {"id": "n-rel-1", "type": "relay", "symbol": "R", "side": "North", "x": 4, "y": 1,
+                        {"id": "n-rel-1", "type": "relay",     "symbol": "R", "side": "North", "x": 4, "y": 1,
                          "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-                        {"id": "n-inf-1", "type": "mine", "symbol": "M", "side": "North", "x": 3, "y": 2,
+                        {"id": "n-inf-1", "type": "mine",      "symbol": "M", "side": "North", "x": 3, "y": 2,
                          "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-                        {"id": "n-cav-1", "type": "cavalry", "symbol": "C", "side": "North", "x": 5, "y": 2,
+                        {"id": "n-cav-1", "type": "cavalry",   "symbol": "C", "side": "North", "x": 5, "y": 2,
                          "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}},
                         {"id": "s-art-1", "type": "artillery", "symbol": "A", "side": "South", "x": 5, "y": 9,
                          "faces": {"top": "A", "bottom": "S", "front": "C", "back": "R", "left": "M", "right": "I"}},
-                        {"id": "s-rel-1", "type": "relay", "symbol": "R", "side": "South", "x": 5, "y": 8,
+                        {"id": "s-rel-1", "type": "relay",     "symbol": "R", "side": "South", "x": 5, "y": 8,
                          "faces": {"top": "R", "bottom": "S", "front": "C", "back": "I", "left": "M", "right": "A"}},
-                        {"id": "s-inf-1", "type": "mine", "symbol": "M", "side": "South", "x": 6, "y": 7,
+                        {"id": "s-inf-1", "type": "mine",      "symbol": "M", "side": "South", "x": 6, "y": 7,
                          "faces": {"top": "M", "bottom": "S", "front": "C", "back": "R", "left": "I", "right": "A"}},
-                        {"id": "s-cav-1", "type": "cavalry", "symbol": "C", "side": "South", "x": 4, "y": 7,
+                        {"id": "s-cav-1", "type": "cavalry",   "symbol": "C", "side": "South", "x": 4, "y": 7,
                          "faces": {"top": "C", "bottom": "S", "front": "I", "back": "R", "left": "M", "right": "A"}}
                     ],
                     "turn": "North",

@@ -46,22 +46,70 @@ class GameEngine:
         if "shield" in u_type: return self.unit_stats["shield"]
         return self.unit_stats["relay"]
 
+    # def compute_lines_of_communication(self, units: List[Dict], side: str) -> Set[Tuple[int, int]]:
+    #     opponent_side = "North" if side == "South" else "South"
+    #     enemy_pos = {(u['x'], u['y']) for u in units if u['side'] == opponent_side}
+    #     friendly_pos = {(u['x'], u['y']) for u in units if u['side'] == side}
+
+    #     active_loc_cells = set()
+    #     enemy_positions = {(u['x'], u['y']) for u in units if u['side'] != side}
+    #     friendly_relays = {u['id']: (u['x'], u['y']) for u in units if
+    #                        u['side'] == side and 'relay' in u['type'].lower()}
+
+    #     # MODIFIED: Only queue arsenals that are NOT occupied by the enemy
+    #     emitters_queue = [
+    #         (ax, ay) for ax, ay in self.arsenals[side] if (ax, ay) not in enemy_pos
+    #     ]
+
+    #     # Authentic Rule: Total collapse ONLY happens if all friendly arsenals are compromised
+    #     if not emitters_queue:
+    #         return set()
+    #     processed_emitters = set(emitters_queue)
+
+    #     for ax, ay in self.arsenals[opponent_side]:
+    #         if (ax, ay) in friendly_pos and (ax, ay) not in processed_emitters:
+    #             emitters_queue.append((ax, ay))
+    #             processed_emitters.add((ax, ay))
+
+    #     for ax, ay in emitters_queue:
+    #         active_loc_cells.add((ax, ay))
+
+    #     while emitters_queue:
+    #         cx, cy = emitters_queue.pop(0)
+    #         for dx, dy in self.directions:
+    #             tx, ty = cx + dx, cy + dy
+    #             while 0 <= tx < self.cols and 0 <= ty < self.rows:
+    #                 if (tx, ty) in self.mountains: break
+    #                 if (tx, ty) in enemy_positions: break
+
+    #                 active_loc_cells.add((tx, ty))
+
+    #                 for r_id, (rx, ry) in list(friendly_relays.items()):
+    #                     if tx == rx and ty == ry and (rx, ry) not in processed_emitters:
+    #                         emitters_queue.append((rx, ry))
+    #                         processed_emitters.add((rx, ry))
+    #                 tx += dx
+    #                 ty += dy
+    #     return active_loc_cells
+
+
+
     def compute_lines_of_communication(self, units: List[Dict], side: str) -> Set[Tuple[int, int]]:
         opponent_side = "North" if side == "South" else "South"
+        
+        # FIXED: Ensure all lookahead algorithms check the dynamic states passed into the method argument
         enemy_pos = {(u['x'], u['y']) for u in units if u['side'] == opponent_side}
         friendly_pos = {(u['x'], u['y']) for u in units if u['side'] == side}
 
         active_loc_cells = set()
-        enemy_positions = {(u['x'], u['y']) for u in units if u['side'] != side}
         friendly_relays = {u['id']: (u['x'], u['y']) for u in units if
                            u['side'] == side and 'relay' in u['type'].lower()}
 
-        # MODIFIED: Only queue arsenals that are NOT occupied by the enemy
+        # Queue arsenals that are NOT actively occupied or overwritten by an enemy asset
         emitters_queue = [
             (ax, ay) for ax, ay in self.arsenals[side] if (ax, ay) not in enemy_pos
         ]
 
-        # Authentic Rule: Total collapse ONLY happens if all friendly arsenals are compromised
         if not emitters_queue:
             return set()
         processed_emitters = set(emitters_queue)
@@ -79,8 +127,15 @@ class GameEngine:
             for dx, dy in self.directions:
                 tx, ty = cx + dx, cy + dy
                 while 0 <= tx < self.cols and 0 <= ty < self.rows:
-                    if (tx, ty) in self.mountains: break
-                    if (tx, ty) in enemy_positions: break
+                    if (tx, ty) in self.mountains: 
+                        break
+                    
+                    # FIXED: A supply line grid cell is covered up to the point of enemy presence.
+                    # The cell containing the enemy is blocked, but your own adjacent units can safely 
+                    # occupy the next cell to contest space without breaking macro connectivity maps.
+                    if (tx, ty) in enemy_pos:
+                        active_loc_cells.add((tx, ty)) # Include the impact tile itself
+                        break
 
                     active_loc_cells.add((tx, ty))
 
@@ -92,30 +147,6 @@ class GameEngine:
                     ty += dy
         return active_loc_cells
 
-    # def get_connected_units(self, units: List[Dict], side: str) -> Set[str]:
-    #     active_loc = self.compute_lines_of_communication(units, side)
-    #     friendly_units = [u for u in units if u['side'] == side]
-
-    #     connected_ids = set()
-    #     queue = []
-
-    #     for u in friendly_units:
-    #         if (u['x'], u['y']) in active_loc:
-    #             connected_ids.add(u['id'])
-    #             queue.append(u)
-
-    #     position_to_unit = {(u['x'], u['y']): u for u in friendly_units}
-    #     while queue:
-    #         current_unit = queue.pop(0)
-    #         cx, cy = current_unit['x'], current_unit['y']
-    #         for dx, dy in self.directions:
-    #             nx, ny = cx + dx, cy + dy
-    #             if (nx, ny) in position_to_unit:
-    #                 neighbor = position_to_unit[(nx, ny)]
-    #                 if neighbor['id'] not in connected_ids:
-    #                     connected_ids.add(neighbor['id'])
-    #                     queue.append(neighbor)
-    #     return connected_ids
 
     def get_connected_units(self, units: List[Dict], side: str) -> Set[str]:
         active_loc = self.compute_lines_of_communication(units, side)
@@ -145,19 +176,32 @@ class GameEngine:
     def get_connected_now(self, units: List[Dict], side: str) -> Set[str]:
         return self.get_connected_units(units, side)
 
-    def get_reachable_tiles(self, units: list, unit_id: str) -> set:
+    def get_reachable_tiles(self, units: list, unit_id: str, mines: list = None) -> set:
         unit = next((u for u in units if u["id"] == unit_id), None)
         if not unit:
             return set()
 
         ux, uy = unit["x"], unit["y"]
+        
+        # Enforce supply line constraints: disconnected units have speed = 0
+        try:
+            connected_ids = self.get_connected_units(units, unit["side"])
+            is_connected = unit_id in connected_ids
+        except:
+            is_connected = True # Default fallback to safety
+
         u_type = unit.get("type", "").lower()
         stats = self.get_stats(u_type)
-        speed = stats.get("speed", 1)
+        speed = stats.get("speed", 1) if is_connected else 0
 
         reachable = {(ux, uy)}
         queue = [(ux, uy, 0)]
         occupied = {(u["x"], u["y"]) for u in units if u["id"] != unit_id}
+        
+        # Add static mines to blocked/occupied tiles list
+        if mines:
+            for mine in mines:
+                occupied.add((mine["x"], mine["y"]))
 
         while queue:
             cx, cy, dist = queue.pop(0)
@@ -276,801 +320,10 @@ class GameEngine:
 
 
 
-    # def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
-    #     target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
-    #     if not target_unit or target_unit['side'] == attacker_side:
-    #         return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
-    #
-    #     if target_unit.get("symbol") == "S":
-    #         return {"valid": False, "reason": "Target unit is shielded and immune to attacks."}
-    #
-    #     total_offense = 0
-    #     total_defense = 0
-    #
-    #     connected_attackers = self.get_connected_units(units, attacker_side)
-    #     connected_defenders = self.get_connected_units(units, target_unit['side'])
-    #     active_threat_vectors = set()
-    #
-    #     # ── SYSTEM 1: SCAN 8 ATTACK VECTORS FROM THE TARGET OUTWARD ──
-    #     for dx, dy in self.directions:
-    #         cx, cy = target_x + dx, target_y + dy
-    #         head_unit = None
-    #         blocked_by_terrain = False
-    #
-    #         # Phase 1: find the head — skip empty tiles, stop at terrain/enemy/friendly
-    #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #             if (cx, cy) in self.mountains:
-    #                 blocked_by_terrain = True
-    #                 break
-    #
-    #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #             if u:
-    #                 if u['side'] == attacker_side:
-    #                     head_unit = u
-    #                 break  # found either a friendly head or an enemy blocker — stop searching
-    #             cx += dx
-    #             cy += dy
-    #
-    #         if blocked_by_terrain or not head_unit:
-    #             continue
-    #
-    #         if head_unit['id'] not in connected_attackers:
-    #             continue
-    #
-    #         head_stats = self.get_stats(head_unit['type'])
-    #         head_dist = max(abs(head_unit['x'] - target_x), abs(head_unit['y'] - target_y))
-    #
-    #         # Phase 2: build the CONTACT chain behind the head — no gaps allowed
-    #         friendly_line = [head_unit]
-    #         nx, ny = head_unit['x'] + dx, head_unit['y'] + dy
-    #         while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #             if (nx, ny) in self.mountains:
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #             if u and u['side'] == attacker_side:
-    #                 friendly_line.append(u)
-    #                 nx += dx
-    #                 ny += dy
-    #             else:
-    #                 break  # gap, enemy, or edge — chain broken
-    #
-    #         is_adjacent = head_dist == 1
-    #         is_fortified = (target_x, target_y) in self.fortresses or (target_x, target_y) in self.passes
-    #
-    #         # Case A: Frontline Head can naturally reach the target
-    #         if head_dist <= head_stats['range']:
-    #             if "cavalry" in head_unit['type'].lower() and is_adjacent and not is_fortified:
-    #                 total_offense += head_stats['charge']
-    #             else:
-    #                 total_offense += head_stats['offense']
-    #
-    #             active_threat_vectors.add((dx, dy))
-    #
-    #             for back_unit in friendly_line[1:]:
-    #                 if back_unit['id'] in connected_attackers:
-    #                     back_stats = self.get_stats(back_unit['type'])
-    #                     total_offense += back_stats['offense']
-    #
-    #         # Case B: Frontline Head is out of range — check for a contact-chained Artillery reaching past
-    #         else:
-    #             for idx, u_node in enumerate(friendly_line):
-    #                 if u_node['id'] in connected_attackers and "artillery" in u_node['type'].lower():
-    #                     art_dist = max(abs(u_node['x'] - target_x), abs(u_node['y'] - target_y))
-    #                     if art_dist <= 3:
-    #                         total_offense += self.get_stats("artillery")["offense"]
-    #                         active_threat_vectors.add((dx, dy))
-    #
-    #                         for back_unit in friendly_line[idx + 1:]:
-    #                             if back_unit['id'] in connected_attackers:
-    #                                 total_offense += self.get_stats(back_unit['type'])['offense']
-    #                         break
-    #
-    #     if total_offense == 0:
-    #         return {"valid": False,
-    #                 "reason": "No valid connected unit configuration can project force onto this target."}
-    #
-    #     # ── SYSTEM 2: SYMMETRICAL DEFENSIVE PROXY SCANNING ──
-    #     # target_connected = target_unit['id'] in connected_defenders
-    #     # if target_connected:
-    #     #     total_defense = self.get_stats(target_unit['type'])['defense']
-    #     #     if (target_x, target_y) in self.fortresses:
-    #     #         total_defense += 4
-    #     #     elif (target_x, target_y) in self.passes:
-    #     #         total_defense += 2
-    #     #
-    #     #     for dx, dy in active_threat_vectors:
-    #     #         cx, cy = target_x - dx, target_y - dy
-    #     #         def_head = None
-    #     #         blocked_def = False
-    #     #
-    #     #         # Phase 1: find the defending head — skip empty tiles
-    #     #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #     #             if (cx, cy) in self.mountains:
-    #     #                 blocked_def = True
-    #     #                 break
-    #     #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #     #             if u:
-    #     #                 if u['side'] == target_unit['side']:
-    #     #                     def_head = u
-    #     #                 break
-    #     #             cx -= dx
-    #     #             cy -= dy
-    #     #
-    #     #         if blocked_def or not def_head:
-    #     #             continue
-    #     #         if def_head['id'] not in connected_defenders:
-    #     #             continue
-    #     #
-    #     #         def_head_stats = self.get_stats(def_head['type'])
-    #     #         def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-    #     #
-    #     #         # Phase 2: build the CONTACT chain behind the defending head — no gaps allowed
-    #     #         defender_line = [def_head]
-    #     #         nx, ny = def_head['x'] - dx, def_head['y'] - dy
-    #     #         while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #     #             if (nx, ny) in self.mountains:
-    #     #                 break
-    #     #             u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #     #             if u and u['side'] == target_unit['side']:
-    #     #                 defender_line.append(u)
-    #     #                 nx -= dx
-    #     #                 ny -= dy
-    #     #             else:
-    #     #                 break
-    #     #
-    #     #         if def_head_dist <= def_head_stats['range']:
-    #     #             total_defense += def_head_stats['defense']
-    #     #             for back_def in defender_line[1:]:
-    #     #                 if back_def['id'] in connected_defenders:
-    #     #                     total_defense += self.get_stats(back_def['type'])['defense']
-    #     #         else:
-    #     #             for idx, d_node in enumerate(defender_line):
-    #     #                 if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-    #     #                     art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-    #     #                     if art_def_dist <= 3:
-    #     #                         total_defense += self.get_stats("artillery")["defense"]
-    #     #                         for back_def in defender_line[idx + 1:]:
-    #     #                             if back_def['id'] in connected_defenders:
-    #     #                                 total_defense += self.get_stats(back_def['type'])['defense']
-    #     #                         break
-    #     #
-    #     #     if (target_x, target_y) in self.fortresses or (target_x, target_y) in self.passes:
-    #     #         total_defense *= 2
-    #     #
-    #     # # ── SYSTEM 3: RESOLUTION CALCULATOR ──
-    #     # net_force = total_offense - total_defense
-    #     # if net_force >= 2:
-    #     #     result = "DESTROY"
-    #     # elif net_force == 1:
-    #     #     result = "RETREAT"
-    #     # else:
-    #     #     result = "FAIL"
-    #     #
-    #     # return {
-    #     #     "valid": True, "result": result, "net_force": net_force,
-    #     #     "offense": total_offense, "defense": total_defense
-    #     # }
-    #
-    #     # ── SYSTEM 2: SYMMETRICAL DEFENSIVE PROXY SCANNING ──
-    #     target_connected = target_unit['id'] in connected_defenders
-    #     if target_connected:
-    #         # 1. Calculate the target node's baseline defense + terrain additions
-    #         base_def = self.get_stats(target_unit['type'])['defense']
-    #         target_personal_defense = base_def
-    #
-    #         is_fortress = (target_x, target_y) in self.fortresses
-    #         is_pass = (target_x, target_y) in self.passes
-    #
-    #         # if is_fortress:
-    #         #     target_personal_defense += 4
-    #         # elif is_pass:
-    #         #     target_personal_defense += 2
-    #         #
-    #         # # Apply the structural terrain multiplier ONLY to the target unit itself
-    #         # if is_fortress or is_pass:
-    #         #     total_defense = target_personal_defense * 2
-    #         # else:
-    #         #     total_defense = target_personal_defense
-    #
-    #         # ── FIXED NO-BUFF FORTRESS LOGIC ──
-    #         base_def = self.get_stats(target_unit['type'])['defense']
-    #         target_personal_defense = base_def
-    #
-    #         is_fortress = (target_x, target_y) in self.fortresses
-    #         is_pass = (target_x, target_y) in self.passes
-    #
-    #         if is_pass:
-    #             target_personal_defense += 2
-    #             total_defense = target_personal_defense * 2
-    #         else:
-    #             # Fortresses provide NO extra base defense and NO multiplier
-    #             total_defense = target_personal_defense
-    #
-    #         # 2. Accumulate all backing proxies flatly into this total
-    #         for dx, dy in active_threat_vectors:
-    #             cx, cy = target_x - dx, target_y - dy
-    #             def_head = None
-    #             blocked_def = False
-    #
-    #             # Phase 1: find the defending head — skip empty tiles
-    #             while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #                 if (cx, cy) in self.mountains:
-    #                     blocked_def = True
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #                 if u:
-    #                     if u['side'] == target_unit['side']:
-    #                         def_head = u
-    #                     break
-    #                 cx -= dx
-    #                 cy -= dy
-    #
-    #             if blocked_def or not def_head:
-    #                 continue
-    #             if def_head['id'] not in connected_defenders:
-    #                 continue
-    #
-    #             def_head_stats = self.get_stats(def_head['type'])
-    #             def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-    #
-    #             # Phase 2: build the CONTACT chain behind the defending head — no gaps allowed
-    #             defender_line = [def_head]
-    #             nx, ny = def_head['x'] - dx, def_head['y'] - dy
-    #             while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #                 if (nx, ny) in self.mountains:
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #                 if u and u['side'] == target_unit['side']:
-    #                     defender_line.append(u)
-    #                     nx -= dx
-    #                     ny -= dy
-    #                 else:
-    #                     break
-    #
-    #             # Proxies are added linearly below to prevent them from scaling with the terrain multiplier
-    #             if def_head_dist <= def_head_stats['range']:
-    #                 total_defense += def_head_stats['defense']
-    #                 for back_def in defender_line[1:]:
-    #                     if back_def['id'] in connected_defenders:
-    #                         total_defense += self.get_stats(back_def['type'])['defense']
-    #             else:
-    #                 for idx, d_node in enumerate(defender_line):
-    #                     if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-    #                         art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-    #                         if art_def_dist <= 3:
-    #                             total_defense += self.get_stats("artillery")["defense"]
-    #                             for back_def in defender_line[idx + 1:]:
-    #                                 if back_def['id'] in connected_defenders:
-    #                                     total_defense += self.get_stats(back_def['type'])['defense']
-    #                             break
-    #
-    #         # ── SYSTEM 3: RESOLUTION CALCULATOR ──
-    #     net_force = total_offense - total_defense
-    #     if net_force >= 2:
-    #         result = "DESTROY"
-    #     elif net_force == 1:
-    #         result = "RETREAT"
-    #     else:
-    #         result = "FAIL"
-    #
-    #     return {
-    #         "valid": True, "result": result, "net_force": net_force,
-    #         "offense": total_offense, "defense": total_defense
-    #     }
 
 
 
-    #
-    # def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
-    #     target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
-    #     if not target_unit or target_unit['side'] == attacker_side:
-    #         return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
-    #
-    #     if target_unit.get("symbol") == "S":
-    #         return {"valid": False, "reason": "Target unit is shielded and immune to attacks."}
-    #
-    #     total_offense = 0
-    #     total_defense = 0
-    #
-    #     connected_attackers = self.get_connected_units(units, attacker_side)
-    #     connected_defenders = self.get_connected_units(units, target_unit['side'])
-    #     active_threat_vectors = set()
-    #
-    #     # ── SYSTEM 1: SCAN 8 ATTACK VECTORS FROM THE TARGET OUTWARD ──
-    #     for dx, dy in self.directions:
-    #         cx, cy = target_x + dx, target_y + dy
-    #         head_unit = None
-    #         blocked_by_terrain = False
-    #
-    #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #             if (cx, cy) in self.mountains:
-    #                 blocked_by_terrain = True
-    #                 break
-    #
-    #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #             if u:
-    #                 if u['side'] == attacker_side:
-    #                     head_unit = u
-    #                 break
-    #             cx += dx
-    #             cy += dy
-    #
-    #         if blocked_by_terrain or not head_unit:
-    #             continue
-    #
-    #         if head_unit['id'] not in connected_attackers:
-    #             continue
-    #
-    #         head_stats = self.get_stats(head_unit['type'])
-    #         head_dist = max(abs(head_unit['x'] - target_x), abs(head_unit['y'] - target_y))
-    #
-    #         # Phase 2: Build the CONTACT chain BEHIND the head (Scan away from the target)
-    #         friendly_line = [head_unit]
-    #         nx, ny = head_unit['x'] + dx, head_unit['y'] + dy  # Moving away from target
-    #         while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #             if (nx, ny) in self.mountains:
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #             if u and u['side'] == attacker_side:
-    #                 friendly_line.append(u)
-    #                 nx += dx
-    #                 ny += dy
-    #             else:
-    #                 break
-    #
-    #         is_adjacent = head_dist == 1
-    #         is_fortified = (target_x, target_y) in self.fortresses or (target_x, target_y) in self.passes
-    #
-    #         if head_dist <= head_stats['range']:
-    #             if "cavalry" in head_unit['type'].lower() and is_adjacent and not is_fortified:
-    #                 total_offense += head_stats['charge']
-    #             else:
-    #                 total_offense += head_stats['offense']
-    #
-    #             active_threat_vectors.add((dx, dy))
-    #
-    #             for back_unit in friendly_line[1:]:
-    #                 if back_unit['id'] in connected_attackers:
-    #                     total_offense += self.get_stats(back_unit['type'])['offense']
-    #         else:
-    #             for idx, u_node in enumerate(friendly_line):
-    #                 if u_node['id'] in connected_attackers and "artillery" in u_node['type'].lower():
-    #                     art_dist = max(abs(u_node['x'] - target_x), abs(u_node['y'] - target_y))
-    #                     if art_dist <= 3:
-    #                         total_offense += self.get_stats("artillery")["offense"]
-    #                         active_threat_vectors.add((dx, dy))
-    #
-    #                         for back_unit in friendly_line[idx + 1:]:
-    #                             if back_unit['id'] in connected_attackers:
-    #                                 total_offense += self.get_stats(back_unit['type'])['offense']
-    #                         break
-    #
-    #     if total_offense == 0:
-    #         return {"valid": False,
-    #                 "reason": "No valid connected unit configuration can project force onto this target."}
-    #
-    #     # ── SYSTEM 2: SYMMETRICAL DEFENSIVE PROXY SCANNING ──
-    #     target_connected = target_unit['id'] in connected_defenders
-    #     if target_connected:
-    #         base_def = self.get_stats(target_unit['type'])['defense']
-    #
-    #         is_fortress = (target_x, target_y) in self.fortresses
-    #         is_pass = (target_x, target_y) in self.passes
-    #
-    #         if is_pass:
-    #             total_defense = (base_def + 2) * 2
-    #         else:
-    #             total_defense = base_def
-    #
-    #         for dx, dy in active_threat_vectors:
-    #             # To look BEHIND the target relative to the attack, we go deep into the direction of the attack ray
-    #             cx, cy = target_x + dx, target_y + dy
-    #             def_head = None
-    #             blocked_def = False
-    #
-    #             while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #                 if (cx, cy) in self.mountains:
-    #                     blocked_def = True
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #                 if u:
-    #                     if u['side'] == target_unit['side']:
-    #                         def_head = u
-    #                     break
-    #                 cx += dx
-    #                 cy += dy
-    #
-    #             if blocked_def or not def_head:
-    #                 continue
-    #             if def_head['id'] not in connected_defenders:
-    #                 continue
-    #
-    #             def_head_stats = self.get_stats(def_head['type'])
-    #             def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-    #
-    #             defender_line = [def_head]
-    #             nx, ny = def_head['x'] + dx, def_head['y'] + dy
-    #             while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #                 if (nx, ny) in self.mountains:
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #                 if u and u['side'] == target_unit['side']:
-    #                     defender_line.append(u)
-    #                     nx += dx
-    #                     ny += dy
-    #                 else:
-    #                     break
-    #
-    #             if def_head_dist <= def_head_stats['range']:
-    #                 total_defense += def_head_stats['defense']
-    #                 for back_def in defender_line[1:]:
-    #                     if back_def['id'] in connected_defenders:
-    #                         total_defense += self.get_stats(back_def['type'])['defense']
-    #             else:
-    #                 for idx, d_node in enumerate(defender_line):
-    #                     if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-    #                         art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-    #                         if art_def_dist <= 3:
-    #                             total_defense += self.get_stats("artillery")["defense"]
-    #                             for back_def in defender_line[idx + 1:]:
-    #                                 if back_def['id'] in connected_defenders:
-    #                                     total_defense += self.get_stats(back_def['type'])['defense']
-    #                             break
-    #
-    #     # ── SYSTEM 3: RESOLUTION CALCULATOR ──
-    #     net_force = total_offense - total_defense
-    #     if net_force >= 2:
-    #         result = "DESTROY"
-    #     elif net_force == 1:
-    #         result = "RETREAT"
-    #     else:
-    #         result = "FAIL"
-    #
-    #     return {
-    #         "valid": True, "result": result, "net_force": net_force,
-    #         "offense": total_offense, "defense": total_defense
-    #     }
-
-    # def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
-    #     target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
-    #     if not target_unit or target_unit['side'] == attacker_side:
-    #         return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
-    #
-    #     if target_unit.get("symbol") == "S":
-    #         return {"valid": False, "reason": "Target unit is shielded and immune to attacks."}
-    #
-    #     total_offense = 0
-    #     total_defense = 0
-    #
-    #     connected_attackers = self.get_connected_units(units, attacker_side)
-    #     connected_defenders = self.get_connected_units(units, target_unit['side'])
-    #     active_threat_vectors = set()
-    #
-    #     # ── SYSTEM 1: SCAN 8 ATTACK VECTORS FROM THE TARGET OUTWARD ──
-    #     for dx, dy in self.directions:
-    #         cx, cy = target_x + dx, target_y + dy
-    #         head_unit = None
-    #         blocked_by_terrain = False
-    #
-    #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #             if (cx, cy) in self.mountains:
-    #                 blocked_by_terrain = True
-    #                 break
-    #
-    #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #             if u:
-    #                 if u['side'] == attacker_side:
-    #                     head_unit = u
-    #                 break
-    #             cx += dx
-    #             cy += dy
-    #
-    #         if blocked_by_terrain or not head_unit:
-    #             continue
-    #
-    #         if head_unit['id'] not in connected_attackers:
-    #             continue
-    #
-    #         head_stats = self.get_stats(head_unit['type'])
-    #         head_dist = max(abs(head_unit['x'] - target_x), abs(head_unit['y'] - target_y))
-    #
-    #         # ── FIXED OFFENSIVE CHAIN: SCAN STRICTLY BEHIND THE HEAD ──
-    #         # We step FURTHER AWAY from the target (adding dx, dy to continue the ray outwards)
-    #         friendly_line = [head_unit]
-    #         nx, ny = head_unit['x'] + dx, head_unit['y'] + dy
-    #         while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #             if (nx, ny) in self.mountains:
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #             if u and u['side'] == attacker_side:
-    #                 friendly_line.append(u)
-    #                 nx += dx
-    #                 ny += dy
-    #             else:
-    #                 break
-    #
-    #         is_adjacent = head_dist == 1
-    #         is_fortified = (target_x, target_y) in self.fortresses or (target_x, target_y) in self.passes
-    #
-    #         if head_dist <= head_stats['range']:
-    #             if "cavalry" in head_unit['type'].lower() and is_adjacent and not is_fortified:
-    #                 total_offense += head_stats['charge']
-    #             else:
-    #                 total_offense += head_stats['offense']
-    #
-    #             active_threat_vectors.add((dx, dy))
-    #
-    #             for back_unit in friendly_line[1:]:
-    #                 if back_unit['id'] in connected_attackers:
-    #                     total_offense += self.get_stats(back_unit['type'])['offense']
-    #         else:
-    #             for idx, u_node in enumerate(friendly_line):
-    #                 if u_node['id'] in connected_attackers and "artillery" in u_node['type'].lower():
-    #                     art_dist = max(abs(u_node['x'] - target_x), abs(u_node['y'] - target_y))
-    #                     if art_dist <= 3:
-    #                         total_offense += self.get_stats("artillery")["offense"]
-    #                         active_threat_vectors.add((dx, dy))
-    #
-    #                         for back_unit in friendly_line[idx + 1:]:
-    #                             if back_unit['id'] in connected_attackers:
-    #                                 total_offense += self.get_stats(back_unit['type'])['offense']
-    #                         break
-    #
-    #     if total_offense == 0:
-    #         return {"valid": False,
-    #                 "reason": "No valid connected unit configuration can project force onto this target."}
-    #
-    #     # ── SYSTEM 2: SYMMETRICAL DEFENSIVE PROXY SCANNING ──
-    #     target_connected = target_unit['id'] in connected_defenders
-    #     if target_connected:
-    #         base_def = self.get_stats(target_unit['type'])['defense']
-    #
-    #         is_fortress = (target_x, target_y) in self.fortresses
-    #         is_pass = (target_x, target_y) in self.passes
-    #
-    #         if is_pass:
-    #             total_defense = (base_def + 2) * 2
-    #         else:
-    #             total_defense = base_def
-    #
-    #         for dx, dy in active_threat_vectors:
-    #             # Continue down the attack ray vector to search strictly behind the target defender
-    #             cx, cy = target_x + dx, target_y + dy
-    #             def_head = None
-    #             blocked_def = False
-    #
-    #             while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #                 if (cx, cy) in self.mountains:
-    #                     blocked_def = True
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #                 if u:
-    #                     if u['side'] == target_unit['side']:
-    #                         def_head = u
-    #                     break
-    #                 cx += dx
-    #                 cy += dy
-    #
-    #             if blocked_def or not def_head:
-    #                 continue
-    #             if def_head['id'] not in connected_defenders:
-    #                 continue
-    #
-    #             def_head_stats = self.get_stats(def_head['type'])
-    #             def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-    #
-    #             # Build the defensive chain going outward on the same exact vector line
-    #             defender_line = [def_head]
-    #             nx, ny = def_head['x'] + dx, def_head['y'] + dy
-    #             while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #                 if (nx, ny) in self.mountains:
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #                 if u and u['side'] == target_unit['side']:
-    #                     defender_line.append(u)
-    #                     nx += dx
-    #                     ny += dy
-    #                 else:
-    #                     break
-    #
-    #             if def_head_dist <= def_head_stats['range']:
-    #                 total_defense += def_head_stats['defense']
-    #                 for back_def in defender_line[1:]:
-    #                     if back_def['id'] in connected_defenders:
-    #                         total_defense += self.get_stats(back_def['type'])['defense']
-    #             else:
-    #                 for idx, d_node in enumerate(defender_line):
-    #                     if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-    #                         art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-    #                         if art_def_dist <= 3:
-    #                             total_defense += self.get_stats("artillery")["defense"]
-    #                             for back_def in defender_line[idx + 1:]:
-    #                                 if back_def['id'] in connected_defenders:
-    #                                     total_defense += self.get_stats(back_def['type'])['defense']
-    #                             break
-    #
-    #     # ── SYSTEM 3: RESOLUTION CALCULATOR ──
-    #     net_force = total_offense - total_defense
-    #     if net_force >= 2:
-    #         result = "DESTROY"
-    #     elif net_force == 1:
-    #         result = "RETREAT"
-    #     else:
-    #         result = "FAIL"
-    #
-    #     return {
-    #         "valid": True, "result": result, "net_force": net_force,
-    #         "offense": total_offense, "defense": total_defense
-    #     }
-
-    # def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
-    #     target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
-    #     if not target_unit or target_unit['side'] == attacker_side:
-    #         return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
-    #
-    #     if target_unit.get("symbol") == "S":
-    #         return {"valid": False, "reason": "Target unit is shielded and immune to attacks."}
-    #
-    #     connected_attackers = self.get_connected_units(units, attacker_side)
-    #     connected_defenders = self.get_connected_units(units, target_unit['side'])
-    #
-    #     # ── SYSTEM 1: EVALUATE EACH OF THE 8 AXES INDEPENDENTLY, PICK ONLY THE BEST ONE ──
-    #     best_axis_offense = 0
-    #     best_axis_direction = None
-    #
-    #     for dx, dy in self.directions:
-    #         cx, cy = target_x + dx, target_y + dy
-    #         head_unit = None
-    #         blocked_by_terrain = False
-    #
-    #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #             if (cx, cy) in self.mountains:
-    #                 blocked_by_terrain = True
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #             if u:
-    #                 if u['side'] == attacker_side:
-    #                     head_unit = u
-    #                 break
-    #             cx += dx
-    #             cy += dy
-    #
-    #         if blocked_by_terrain or not head_unit:
-    #             continue
-    #         if head_unit['id'] not in connected_attackers:
-    #             continue
-    #
-    #         head_stats = self.get_stats(head_unit['type'])
-    #         head_dist = max(abs(head_unit['x'] - target_x), abs(head_unit['y'] - target_y))
-    #
-    #         friendly_line = [head_unit]
-    #         nx, ny = head_unit['x'] + dx, head_unit['y'] + dy
-    #         while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #             if (nx, ny) in self.mountains:
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #             if u and u['side'] == attacker_side:
-    #                 friendly_line.append(u)
-    #                 nx += dx
-    #                 ny += dy
-    #             else:
-    #                 break
-    #
-    #         is_adjacent = head_dist == 1
-    #         is_fortified = (target_x, target_y) in self.fortresses or (target_x, target_y) in self.passes
-    #         axis_offense = 0
-    #
-    #         if head_dist <= head_stats['range']:
-    #             if "cavalry" in head_unit['type'].lower() and is_adjacent and not is_fortified:
-    #                 axis_offense += head_stats['charge']
-    #             else:
-    #                 axis_offense += head_stats['offense']
-    #             for back_unit in friendly_line[1:]:
-    #                 if back_unit['id'] in connected_attackers:
-    #                     axis_offense += self.get_stats(back_unit['type'])['offense']
-    #         else:
-    #             for idx, u_node in enumerate(friendly_line):
-    #                 if u_node['id'] in connected_attackers and "artillery" in u_node['type'].lower():
-    #                     art_dist = max(abs(u_node['x'] - target_x), abs(u_node['y'] - target_y))
-    #                     if art_dist <= 3:
-    #                         axis_offense += self.get_stats("artillery")["offense"]
-    #                         for back_unit in friendly_line[idx + 1:]:
-    #                             if back_unit['id'] in connected_attackers:
-    #                                 axis_offense += self.get_stats(back_unit['type'])['offense']
-    #                         break
-    #
-    #         # Keep only the single strongest axis found so far — no summing across directions
-    #         if axis_offense > best_axis_offense:
-    #             best_axis_offense = axis_offense
-    #             best_axis_direction = (dx, dy)
-    #
-    #     if best_axis_offense == 0:
-    #         return {"valid": False,
-    #                 "reason": "No valid connected unit configuration can project force onto this target."}
-    #
-    #     total_offense = best_axis_offense
-    #
-    #     # ── SYSTEM 2: DEFENSE ONLY EVER CHECKS THE ONE CHOSEN ATTACK AXIS ──
-    #     target_connected = target_unit['id'] in connected_defenders
-    #     total_defense = 0
-    #
-    #     if target_connected:
-    #         base_def = self.get_stats(target_unit['type'])['defense']
-    #         is_fortress = (target_x, target_y) in self.fortresses
-    #         is_pass = (target_x, target_y) in self.passes
-    #
-    #         if is_fortress:
-    #             total_defense = (base_def + 4) * 2
-    #         elif is_pass:
-    #             total_defense = (base_def + 2) * 2
-    #         else:
-    #             total_defense = base_def
-    #
-    #         dx, dy = best_axis_direction
-    #         cx, cy = target_x - dx, target_y - dy
-    #         def_head = None
-    #         blocked_def = False
-    #
-    #         while 0 <= cx < self.cols and 0 <= cy < self.rows:
-    #             if (cx, cy) in self.mountains:
-    #                 blocked_def = True
-    #                 break
-    #             u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-    #             if u:
-    #                 if u['side'] == target_unit['side']:
-    #                     def_head = u
-    #                 break
-    #             cx -= dx
-    #             cy -= dy
-    #
-    #         if not blocked_def and def_head and def_head['id'] in connected_defenders:
-    #             def_head_stats = self.get_stats(def_head['type'])
-    #             def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-    #
-    #             defender_line = [def_head]
-    #             nx, ny = def_head['x'] - dx, def_head['y'] - dy
-    #             while 0 <= nx < self.cols and 0 <= ny < self.rows:
-    #                 if (nx, ny) in self.mountains:
-    #                     break
-    #                 u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-    #                 if u and u['side'] == target_unit['side']:
-    #                     defender_line.append(u)
-    #                     nx -= dx
-    #                     ny -= dy
-    #                 else:
-    #                     break
-    #
-    #             if def_head_dist <= def_head_stats['range']:
-    #                 total_defense += def_head_stats['defense']
-    #                 for back_def in defender_line[1:]:
-    #                     if back_def['id'] in connected_defenders:
-    #                         total_defense += self.get_stats(back_def['type'])['defense']
-    #             else:
-    #                 for idx, d_node in enumerate(defender_line):
-    #                     if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-    #                         art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-    #                         if art_def_dist <= 3:
-    #                             total_defense += self.get_stats("artillery")["defense"]
-    #                             for back_def in defender_line[idx + 1:]:
-    #                                 if back_def['id'] in connected_defenders:
-    #                                     total_defense += self.get_stats(back_def['type'])['defense']
-    #                             break
-    #
-    #     # ── SYSTEM 3: RESOLUTION CALCULATOR ──
-    #     net_force = total_offense - total_defense
-    #     if net_force >= 2:
-    #         result = "DESTROY"
-    #     elif net_force == 1:
-    #         result = "RETREAT"
-    #     else:
-    #         result = "FAIL"
-    #
-    #     return {
-    #         "valid": True, "result": result, "net_force": net_force,
-    #         "offense": total_offense, "defense": total_defense
-    #     }
-
-    def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int) -> Dict:
+    def calculate_combat(self, units: List[Dict], attacker_side: str, target_x: int, target_y: int, verbose: bool = True) -> Dict:
         target_unit = next((u for u in units if u['x'] == target_x and u['y'] == target_y), None)
         if not target_unit or target_unit['side'] == attacker_side:
             return {"valid": False, "reason": "No valid enemy target located on those coordinates."}
@@ -1081,16 +334,21 @@ class GameEngine:
         connected_attackers = self.get_connected_units(units, attacker_side)
         connected_defenders = self.get_connected_units(units, target_unit['side'])
 
-        # ── SYSTEM 1: EVALUATE INDEPENDENT AXES, SELECT HIGHEST COMBAT VALUE ──
+        # Strict Combat Whitelist
+        COMBAT_OFFENSE_TYPES = ["artillery", "cavalry", "infantry"]
+
+        # ── SYSTEM 1: EVALUATE INDEPENDENT AXES (LOOK UPSTREAM FOR ATTACKERS) ──
         best_axis_offense = 0
         best_axis_direction = None
 
         for dx, dy in self.directions:
-            cx, cy = target_x + dx, target_y + dy
+            # We treat (dx, dy) as the impact direction vector (e.g., 0, 1 means force moving South)
+            # Therefore, the attacker must be located UPSTREAM (-dx, -dy)
+            cx, cy = target_x - dx, target_y - dy
             head_unit = None
             blocked_by_terrain = False
 
-            # Phase 1: Locate the leading attacking unit along this specific ray
+            # Phase 1: Locate the leading attacking unit upstream along this specific ray
             while 0 <= cx < self.cols and 0 <= cy < self.rows:
                 if (cx, cy) in self.mountains:
                     blocked_by_terrain = True
@@ -1100,8 +358,8 @@ class GameEngine:
                     if u['side'] == attacker_side:
                         head_unit = u
                     break
-                cx += dx
-                cy += dy
+                cx -= dx
+                cy -= dy
 
             if blocked_by_terrain or not head_unit:
                 continue
@@ -1111,17 +369,17 @@ class GameEngine:
             head_stats = self.get_stats(head_unit['type'])
             head_dist = max(abs(head_unit['x'] - target_x), abs(head_unit['y'] - target_y))
 
-            # Phase 2: Trace straight backwards behind the head to check for direct contact support
+            # Phase 2: Trace straight backwards behind the head (further upstream: -dx, -dy)
             friendly_line = [head_unit]
-            nx, ny = head_unit['x'] + dx, head_unit['y'] + dy
+            nx, ny = head_unit['x'] - dx, head_unit['y'] - dy
             while 0 <= nx < self.cols and 0 <= ny < self.rows:
                 if (nx, ny) in self.mountains:
                     break
                 u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
                 if u and u['side'] == attacker_side:
                     friendly_line.append(u)
-                    nx += dx
-                    ny += dy
+                    nx -= dx
+                    ny -= dy
                 else:
                     break
 
@@ -1133,10 +391,13 @@ class GameEngine:
                 if "cavalry" in head_unit['type'].lower() and is_adjacent and not is_fortified:
                     axis_offense += head_stats['charge']
                 else:
-                    axis_offense += head_stats['offense']
+                    if head_unit['type'].lower() in COMBAT_OFFENSE_TYPES:
+                        axis_offense += head_stats['offense']
+
                 for back_unit in friendly_line[1:]:
                     if back_unit['id'] in connected_attackers:
-                        axis_offense += self.get_stats(back_unit['type'])['offense']
+                        if back_unit['type'].lower() in COMBAT_OFFENSE_TYPES:
+                            axis_offense += self.get_stats(back_unit['type'])['offense']
             else:
                 for idx, u_node in enumerate(friendly_line):
                     if u_node['id'] in connected_attackers and "artillery" in u_node['type'].lower():
@@ -1145,7 +406,8 @@ class GameEngine:
                             axis_offense += self.get_stats("artillery")["offense"]
                             for back_unit in friendly_line[idx + 1:]:
                                 if back_unit['id'] in connected_attackers:
-                                    axis_offense += self.get_stats(back_unit['type'])['offense']
+                                    if back_unit['type'].lower() in COMBAT_OFFENSE_TYPES:
+                                        axis_offense += self.get_stats(back_unit['type'])['offense']
                             break
 
             if axis_offense > best_axis_offense:
@@ -1153,12 +415,11 @@ class GameEngine:
                 best_axis_direction = (dx, dy)
 
         if best_axis_offense == 0:
-            return {"valid": False,
-                    "reason": "No valid connected unit configuration can project force onto this target."}
+            return {"valid": False, "reason": "No valid connected unit configuration can project force."}
 
         total_offense = best_axis_offense
 
-        # ── SYSTEM 2: DEFENSIVE STACK VERIFICATION ALONG THE CHOSEN AXIS ──
+        # ── SYSTEM 2: DEFENSIVE STACK VERIFICATION (LOOK DOWNSTREAM FOR DEFENDERS) ──
         target_connected = target_unit['id'] in connected_defenders
         total_defense = 0
 
@@ -1174,57 +435,39 @@ class GameEngine:
             else:
                 total_defense = base_def
 
-            # FIX: Step OUTWARD along the vector of the incoming attack to find defenders behind the target
             dx, dy = best_axis_direction
+            
+            # Step downstream (+ direction of attack vector) to find the tile directly behind the target
             cx, cy = target_x + dx, target_y + dy
-            def_head = None
-            blocked_def = False
-
-            while 0 <= cx < self.cols and 0 <= cy < self.rows:
-                if (cx, cy) in self.mountains:
-                    blocked_def = True
-                    break
-                u = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
-                if u:
-                    if u['side'] == target_unit['side']:
-                        def_head = u
-                    break
-                cx += dx
-                cy += dy
-
-            if not blocked_def and def_head and def_head['id'] in connected_defenders:
-                def_head_stats = self.get_stats(def_head['type'])
-                def_head_dist = max(abs(def_head['x'] - target_x), abs(def_head['y'] - target_y))
-
-                # FIX: Ensure the chain check only registers units directly touching each other along this vector line
-                defender_line = [def_head]
-                nx, ny = def_head['x'] + dx, def_head['y'] + dy
-                while 0 <= nx < self.cols and 0 <= ny < self.rows:
-                    if (nx, ny) in self.mountains:
-                        break
-                    u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
-                    if u and u['side'] == target_unit['side']:
-                        defender_line.append(u)
-                        nx += dx
-                        ny += dy
-                    else:
-                        break
-
-                if def_head_dist <= def_head_stats['range']:
-                    total_defense += def_head_stats['defense']
-                    for back_def in defender_line[1:]:
-                        if back_def['id'] in connected_defenders:
-                            total_defense += self.get_stats(back_def['type'])['defense']
-                else:
-                    for idx, d_node in enumerate(defender_line):
-                        if d_node['id'] in connected_defenders and "artillery" in d_node['type'].lower():
-                            art_def_dist = max(abs(d_node['x'] - target_x), abs(d_node['y'] - target_y))
-                            if art_def_dist <= 3:
-                                total_defense += self.get_stats("artillery")["defense"]
-                                for back_def in defender_line[idx + 1:]:
-                                    if back_def['id'] in connected_defenders:
-                                        total_defense += self.get_stats(back_def['type'])['defense']
-                                break
+            
+            # Strict Adjacency Check
+            if 0 <= cx < self.cols and 0 <= cy < self.rows and (cx, cy) not in self.mountains:
+                first_backup = next((unit for unit in units if unit['x'] == cx and unit['y'] == cy), None)
+                
+                if first_backup and first_backup['side'] == target_unit['side'] and first_backup['id'] in connected_defenders:
+                    defender_line = []
+                    # Whitelist check for the first backing unit before building the chain
+                    if first_backup['type'].lower() in COMBAT_OFFENSE_TYPES:
+                        defender_line.append(first_backup)
+                    
+                    nx, ny = cx + dx, cy + dy
+                    
+                    # Trace the unbroken chain further downstream
+                    while 0 <= nx < self.cols and 0 <= ny < self.rows:
+                        if (nx, ny) in self.mountains:
+                            break
+                        u = next((unit for unit in units if unit['x'] == nx and unit['y'] == ny), None)
+                        if u and u['side'] == target_unit['side'] and u['id'] in connected_defenders:
+                            if u['type'].lower() in COMBAT_OFFENSE_TYPES:
+                                defender_line.append(u)
+                            nx += dx
+                            ny += dy
+                        else:
+                            break
+                    
+                    # Accumulate scores for verified whitelisted units in the strict unbroken chain
+                    for defender_piece in defender_line:
+                        total_defense += self.get_stats(defender_piece['type'])['defense']
 
         # ── SYSTEM 3: RESOLUTION CALCULATOR ──
         net_force = total_offense - total_defense
@@ -1234,6 +477,15 @@ class GameEngine:
             result = "RETREAT"
         else:
             result = "FAIL"
+
+        if verbose:
+            print(f"\n⚡ [ENGINE RESOLUTION MATRIX]")
+            print(f"   ├─ Action Trigger: Side '{attacker_side}' attacking target at ({target_x}, {target_y})")
+            print(f"   ├─ Vector Axis: Direction Vector dx={best_axis_direction[0]}, dy={best_axis_direction[1]}")
+            print(f"   ├─ Final Offense Calculation: {total_offense}")
+            print(f"   ├─ Final Defense Calculation: {total_defense}")
+            print(f"   └─ Output Force Evaluation: Net={net_force} Result={result}\n")
+
 
         return {
             "valid": True, "result": result, "net_force": net_force,

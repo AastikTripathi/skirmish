@@ -17,8 +17,8 @@ var server_url: String = "ws://localhost:8000/ws/"
 var room_id: String = "skirmish_room"
 var player_name: String = "GodotPlayer"
 var room_password: String = ""
-var vs_ai: bool = true
-var ai_vs_ai: bool = false
+var vs_ai: bool = false
+var ai_vs_ai: bool = true
 var player_side: String = "North"
 
 func _ready() -> void:

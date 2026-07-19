@@ -79,9 +79,7 @@ func _ready() -> void:
 	NetworkManager.room_id     = "skirmish_room"
 	NetworkManager.player_name = "GodotCommander"
 	NetworkManager.player_side = "North"
-	NetworkManager.vs_ai       = true
-	NetworkManager.connect_to_room()
-	status_lbl.text = "Connecting…"
+	_show_mode_selection_menu()
 
 	var env: Environment = $WorldEnvironment.environment
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_BG
@@ -892,3 +890,80 @@ func _calculate_top_face_after_roll(current_faces: Dictionary, dx: int, dy: int)
 		return current_faces.get("front", "C")
 		
 	return fallback
+
+func _show_mode_selection_menu() -> void:
+	var overlay = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hud.add_child(overlay)
+	status_lbl.text = "Select game mode"
+
+	# Dark translucent background
+	var bg = ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.65)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(bg)
+
+	# Container card
+	var card = PanelContainer.new()
+	var cs   = StyleBoxFlat.new()
+	cs.bg_color           = Color(0.06, 0.08, 0.12, 0.98)
+	cs.border_color       = Color(0.3, 0.5, 0.7, 1.0)
+	cs.set_border_width_all(2)
+	cs.set_corner_radius_all(12)
+	card.add_theme_stylebox_override("panel", cs)
+	card.set_anchors_preset(Control.PRESET_CENTER)
+	card.set_offset(SIDE_LEFT,   -180)
+	card.set_offset(SIDE_TOP,    -100)
+	card.set_offset(SIDE_RIGHT,   180)
+	card.set_offset(SIDE_BOTTOM,  100)
+	overlay.add_child(card)
+
+	var vb = VBoxContainer.new()
+	vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	vb.add_theme_constant_override("separation", 15)
+	card.add_child(vb)
+
+	var title = Label.new()
+	title.text = "⚔  GAME OPTIONS  ⚔"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(title)
+
+	vb.add_child(HSeparator.new())
+
+	# Button 1: Play vs AI
+	var btn_play = Button.new()
+	btn_play.text = "🎮  Play vs AI"
+	btn_play.add_theme_font_size_override("font_size", 15)
+	var s_play = StyleBoxFlat.new()
+	s_play.bg_color = Color(0.15, 0.45, 0.70)
+	s_play.set_corner_radius_all(6)
+	s_play.set_content_margin_all(8)
+	btn_play.add_theme_stylebox_override("normal", s_play)
+	btn_play.pressed.connect(func():
+		overlay.queue_free()
+		NetworkManager.vs_ai = true
+		NetworkManager.ai_vs_ai = false
+		status_lbl.text = "Connecting vs AI..."
+		NetworkManager.connect_to_room()
+	)
+	vb.add_child(btn_play)
+
+	# Button 2: AI vs AI Observer
+	var btn_obs = Button.new()
+	btn_obs.text = "👁️  Observe AI vs AI"
+	btn_obs.add_theme_font_size_override("font_size", 15)
+	var s_obs = StyleBoxFlat.new()
+	s_obs.bg_color = Color(0.40, 0.20, 0.60)
+	s_obs.set_corner_radius_all(6)
+	s_obs.set_content_margin_all(8)
+	btn_obs.add_theme_stylebox_override("normal", s_obs)
+	btn_obs.pressed.connect(func():
+		overlay.queue_free()
+		NetworkManager.vs_ai = false
+		NetworkManager.ai_vs_ai = true
+		status_lbl.text = "Connecting observer..."
+		NetworkManager.connect_to_room()
+	)
+	vb.add_child(btn_obs)
